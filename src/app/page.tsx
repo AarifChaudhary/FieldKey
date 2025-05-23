@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -18,8 +19,8 @@ const PASSWORD_MAX_LENGTH = 16; // As per AI flow default and common practice
 
 export default function HomePage() {
   const [fields, setFields] = useState<FieldDefinition[]>(() => [
-    { id: uuidv4(), label: 'Site Name', value: '', included: true },
-    { id: uuidv4(), label: 'Username', value: '', included: true },
+    { id: 'initial-field-site-name', label: 'Site Name', value: '', included: true },
+    { id: 'initial-field-username', label: 'Username', value: '', included: true },
   ]);
   const [generatedPassword, setGeneratedPassword] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
