@@ -1,7 +1,8 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
-import { Github, Linkedin, Server, BrainCircuit } from 'lucide-react'; // Using Server for React, BrainCircuit for AI
+import { Github, Linkedin, Server } from 'lucide-react'; // Using Server for React
 import Image from 'next/image';
 
 export default function AboutPage() {
@@ -19,7 +20,7 @@ export default function AboutPage() {
         </CardHeader>
         <CardContent className="space-y-6 text-center max-w-2xl mx-auto">
           <p>
-            FieldKey is a modern password generation tool designed to help you create strong, unique, and human-rememberable passwords. 
+            FieldKey is a modern password generation tool designed to help you create unique and human-rememberable passwords.
             It leverages a deterministic approach: by providing a set of custom input fields and their specific sequence, FieldKey generates a consistent password every time.
           </p>
           <p className="font-semibold text-primary">
@@ -38,10 +39,6 @@ export default function AboutPage() {
                     <path d="M10 3.545c1.804 0 3.294 1.388 3.522 3.182H6.478A3.531 3.531 0 0110 3.545zm3.522 4.318H6.478a3.53 3.53 0 000 1.274h7.044a3.53 3.53 0 000-1.274zm.254 2.182H6.224a3.531 3.531 0 003.776 3.182 3.531 3.531 0 003.776-3.182z" />
                 </svg>
                 <span className="text-sm text-muted-foreground">Tailwind CSS</span>
-              </div>
-              <div className="flex flex-col items-center" title="Generative AI">
-                <BrainCircuit className="h-10 w-10 text-primary mb-1" />
-                <span className="text-sm text-muted-foreground">AI</span>
               </div>
             </div>
           </div>

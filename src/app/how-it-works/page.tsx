@@ -1,5 +1,6 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle, KeyRound, ListOrdered, DatabaseZap, BrainCog } from 'lucide-react';
+import { CheckCircle, KeyRound, ListOrdered, DatabaseZap, BrainCog, Settings2 } from 'lucide-react';
 
 export default function HowItWorksPage() {
   const steps = [
@@ -14,9 +15,9 @@ export default function HowItWorksPage() {
       description: "Arrange your fields by dragging and dropping them. The sequence of your fields is crucial. Changing the order will result in a different password, adding an extra layer of uniqueness."
     },
     {
-      icon: <CheckCircle className="h-8 w-8 text-primary mb-2" />,
-      title: "3. Toggle Inclusion & AI Enhancement",
-      description: "For each field, decide if its value should be included in the password generation. Our AI then intelligently selects secure and memorable parts from your included field values, ensuring the password meets length (8-16 characters) and complexity requirements (uppercase, lowercase, number, special character)."
+      icon: <Settings2 className="h-8 w-8 text-primary mb-2" />, // Replaced CheckCircle with Settings2 or similar
+      title: "3. Toggle Inclusion & Combination",
+      description: "For each field, decide if its value should be included in the password generation. The tool then combines parts of your included field values. The system attempts to create a password that meets length (8-16 characters) and basic complexity requirements (e.g., by trying to include an uppercase letter, a number, and a special character if they are not naturally present from your inputs)."
     },
     {
       icon: <DatabaseZap className="h-8 w-8 text-primary mb-2" />,
@@ -24,7 +25,7 @@ export default function HowItWorksPage() {
       description: "FieldKey is designed with privacy at its core. Your field values and generated passwords are NEVER stored on any server or your local device. The password is regenerated on-the-fly each time based on your exact inputs and sequence."
     },
     {
-      icon: <BrainCog className="h-8 w-8 text-primary mb-2" />,
+      icon: <BrainCog className="h-8 w-8 text-primary mb-2" />, // Keeping BrainCog for "remembering"
       title: "5. Remember Your Inputs",
       description: "Since nothing is stored, you MUST remember the exact field values and their order to regenerate the same password. Think of your field combination as your master key. You can use the 'Presets' feature to save the field structure (labels and order, not values) for convenience."
     }
@@ -53,7 +54,7 @@ export default function HowItWorksPage() {
             <h3 className="text-2xl font-semibold mb-2">Key Takeaways:</h3>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
               <li><strong>Deterministic:</strong> Same inputs + same order = same password, every time.</li>
-              <li><strong>Secure:</strong> AI-enhanced to be strong and include memorable parts.</li>
+              <li><strong>Locally Generated:</strong> Passwords are created in your browser based on your inputs.</li>
               <li><strong>Private:</strong> No data (field values or passwords) is ever stored.</li>
               <li><strong>You're in Control:</strong> Your memory of the inputs is the key. Use presets for field structures.</li>
             </ul>

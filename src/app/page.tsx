@@ -6,7 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 import type { FieldDefinition } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { enhancePasswordSecurity } from '@/ai/flows/enhance-password-security';
 import FieldList from '@/components/fields/field-list';
 import PasswordDisplay from '@/components/password-display';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +14,52 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const MAX_FIELDS = 10;
-const PASSWORD_MAX_LENGTH = 16; // As per AI flow default and common practice
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 16;
+const PADDING_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{};:,.<>/?";
+
+// Helper function to shuffle a string (Fisher-Yates shuffle)
+function shuffleString(str: string): string {
+  const arr = str.split('');
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.join('');
+}
+
+// Local password generation logic
+function generateLocalPassword(fieldValues: string[]): string {
+  if (fieldValues.length === 0) {
+    return '';
+  }
+
+  let rawPassword = fieldValues.join('');
+
+  // Ensure basic complexity
+  if (!/[A-Z]/.test(rawPassword)) rawPassword += 'A';
+  if (!/[a-z]/.test(rawPassword)) rawPassword += 'a';
+  if (!/\d/.test(rawPassword)) rawPassword += '1';
+  if (!/[^A-Za-z0-9]/.test(rawPassword)) rawPassword += '!';
+
+  // Shuffle to better mix the appended characters
+  rawPassword = shuffleString(rawPassword);
+
+  // Adjust length
+  while (rawPassword.length < PASSWORD_MIN_LENGTH) {
+    rawPassword += PADDING_CHARS.charAt(Math.floor(Math.random() * PADDING_CHARS.length));
+  }
+
+  if (rawPassword.length > PASSWORD_MAX_LENGTH) {
+    rawPassword = rawPassword.substring(0, PASSWORD_MAX_LENGTH);
+  }
+  
+  // One final shuffle after length adjustment
+  rawPassword = shuffleString(rawPassword);
+
+  return rawPassword;
+}
+
 
 export default function HomePage() {
   const [fields, setFields] = useState<FieldDefinition[]>(() => [
@@ -72,18 +116,19 @@ export default function HomePage() {
     
     setIsLoading(true);
     setGeneratedPassword(''); // Clear previous password
+    
+    // Simulate a short delay for local generation to mimic async behavior if needed for UI
+    await new Promise(resolve => setTimeout(resolve, 100)); 
+
     try {
-      const result = await enhancePasswordSecurity({
-        fieldValues,
-        maxLength: PASSWORD_MAX_LENGTH,
-      });
-      if (result.enhancedPassword) {
-        setGeneratedPassword(result.enhancedPassword);
+      const newPassword = generateLocalPassword(fieldValues);
+      if (newPassword) {
+        setGeneratedPassword(newPassword);
       } else {
-        setError("AI could not generate a password. Try different inputs.");
+        setError("Could not generate a password. Try different inputs.");
         toast({
           title: 'Password Generation Failed',
-          description: 'The AI could not generate a password with the given inputs. Please try modifying your field values.',
+          description: 'Could not generate a password with the given inputs. Please try modifying your field values.',
           variant: 'destructive',
         });
       }
@@ -105,7 +150,6 @@ export default function HomePage() {
    useEffect(() => {
     const hasInputs = fields.some(f => f.included && f.value.trim() !== '');
     if (!isLoading && hasInputs) {
-      // Debounce or smart update could be added here if generation is too frequent
       handleGeneratePassword();
     } else if (!hasInputs) {
       setGeneratedPassword(''); // Clear password if no inputs
@@ -119,7 +163,7 @@ export default function HomePage() {
         <CardHeader>
           <CardTitle className="text-3xl">Password Generator</CardTitle>
           <CardDescription>
-            Define your custom fields, order them, and FieldKey will generate a strong, memorable password.
+            Define your custom fields, order them, and FieldKey will generate a password based on your inputs.
             The same inputs in the same order will always produce the same password. 
             <strong> No data is ever stored.</strong>
           </CardDescription>
@@ -148,7 +192,7 @@ export default function HomePage() {
             {isLoading && (
               <div className="flex items-center space-x-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Generating your secure password...</span>
+                <span>Generating your password...</span>
               </div>
             )}
             {error && (
