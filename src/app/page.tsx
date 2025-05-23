@@ -31,27 +31,74 @@ function generateLocalPassword(fieldValues: string[]): string {
     return '';
   }
 
-  // Concatenate all field values in their given order
-  let rawPassword = fieldValues.join('');
-
-  // Ensure basic complexity deterministically
-  if (!/[A-Z]/.test(rawPassword)) rawPassword += COMPLEXITY_CHARS.uppercase;
-  if (!/[a-z]/.test(rawPassword)) rawPassword += COMPLEXITY_CHARS.lowercase;
-  if (!/\d/.test(rawPassword)) rawPassword += COMPLEXITY_CHARS.number;
-  if (!/[^A-Za-z0-9]/.test(rawPassword)) rawPassword += COMPLEXITY_CHARS.special;
-
-  // Adjust length deterministically
-  let paddingIndex = 0;
-  while (rawPassword.length < PASSWORD_MIN_LENGTH) {
-    rawPassword += PADDING_CHARS.charAt(paddingIndex % PADDING_CHARS.length);
-    paddingIndex++;
-  }
-
-  if (rawPassword.length > PASSWORD_MAX_LENGTH) {
-    rawPassword = rawPassword.substring(0, PASSWORD_MAX_LENGTH);
+  let rawPasswordChars: string[] = [];
+  let charIndex = 0;
+  // Max charIndex of 100 is a safety break, actual break is when no more chars can be added or max length is reached.
+  while (rawPasswordChars.length < PASSWORD_MAX_LENGTH && charIndex < 100) {
+    let charAddedInThisPass = false;
+    for (const value of fieldValues) {
+      if (charIndex < value.length) {
+        if (rawPasswordChars.length < PASSWORD_MAX_LENGTH) {
+          rawPasswordChars.push(value[charIndex]);
+          charAddedInThisPass = true;
+        } else {
+          break; // Max password length reached
+        }
+      }
+    }
+    if (!charAddedInThisPass) {
+      // If no characters were added from any field at this charIndex, we're done with interleaving.
+      break;
+    }
+    charIndex++;
   }
   
-  return rawPassword;
+  let password = rawPasswordChars.join('');
+
+  // Ensure basic complexity
+  let hasUppercase = /[A-Z]/.test(password);
+  let hasLowercase = /[a-z]/.test(password);
+  let hasNumber = /\d/.test(password);
+  let hasSpecial = /[^A-Za-z0-9]/.test(password);
+
+  const neededComplexityChars: string[] = [];
+  if (!hasUppercase) neededComplexityChars.push(COMPLEXITY_CHARS.uppercase);
+  if (!hasLowercase) neededComplexityChars.push(COMPLEXITY_CHARS.lowercase);
+  if (!hasNumber) neededComplexityChars.push(COMPLEXITY_CHARS.number);
+  if (!hasSpecial) neededComplexityChars.push(COMPLEXITY_CHARS.special);
+  
+  let tempPasswordArray = password.split('');
+
+  for (let i = 0; i < neededComplexityChars.length; i++) {
+    const charToAdd = neededComplexityChars[i];
+    if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
+      tempPasswordArray.push(charToAdd);
+    } else {
+      // Replace characters from the end to ensure complexity
+      // The (neededComplexityChars.length - 1 - i) ensures we replace distinct positions for each needed char
+      const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i;
+      if (replacementIndex >= 0) { // Should be safe given PASSWORD_MAX_LENGTH
+         tempPasswordArray[replacementIndex] = charToAdd;
+      }
+    }
+  }
+  password = tempPasswordArray.join('');
+  
+  // Adjust length: Pad if too short
+  let paddingLoopIndex = 0;
+  tempPasswordArray = password.split(''); // Re-split as it might have changed
+  while (tempPasswordArray.length < PASSWORD_MIN_LENGTH) {
+    tempPasswordArray.push(PADDING_CHARS.charAt(paddingLoopIndex % PADDING_CHARS.length));
+    paddingLoopIndex++;
+  }
+  password = tempPasswordArray.join('');
+
+  // Final truncation if somehow it became too long (e.g. padding after complexity replacement at max length, though unlikely with current logic)
+  if (password.length > PASSWORD_MAX_LENGTH) {
+    password = password.substring(0, PASSWORD_MAX_LENGTH);
+  }
+  
+  return password;
 }
 
 
@@ -98,24 +145,31 @@ export default function HomePage() {
     const includedFieldsWithValue = fields.filter(field => field.included && field.value.trim() !== '');
     
     if (includedFieldsWithValue.length === 0) {
-      const hasAnyValueAtAll = fields.some(field => field.value.trim() !== '');
-      if (hasAnyValueAtAll && fields.some(field => field.included)) { 
+      const anyFieldsIncluded = fields.some(field => field.included);
+      const anyFieldsHaveValue = fields.some(field => field.value.trim() !== '');
+
+      if (!anyFieldsIncluded && anyFieldsHaveValue) {
         toast({
-            title: 'No included fields with values',
-            description: 'Please include fields and provide values for them, or ensure your included fields have values.',
+            title: 'No fields included',
+            description: 'Please mark some fields as "included" for password generation.',
             variant: 'destructive',
         });
-      } else if (fields.some(field => field.included && field.value.trim() === '')) {
+      } else if (anyFieldsIncluded && !anyFieldsHaveValue) {
          toast({
             title: 'Included fields are empty',
             description: 'Please provide values for your included fields.',
             variant: 'destructive',
         });
-      }
-      else {
+      } else if (!anyFieldsIncluded && !anyFieldsHaveValue) {
+        toast({
+            title: 'No inputs for password',
+            description: 'Please add values to your fields and ensure they are included.',
+            variant: 'destructive',
+        });
+      } else { // Included fields exist, but their values are empty strings
          toast({
-            title: 'No input values or included fields',
-            description: 'Please add values to your fields and ensure they are included for password generation.',
+            title: 'Included fields are effectively empty',
+            description: 'Please ensure your included fields have non-whitespace values.',
             variant: 'destructive',
         });
       }
@@ -129,17 +183,21 @@ export default function HomePage() {
     setGeneratedPassword(''); 
 
     try {
-      const newPassword = generateLocalPassword(fieldValuesInOrder);
-      if (newPassword) {
-        setGeneratedPassword(newPassword);
-      } else {
-        setError("Could not generate a password. Try different inputs.");
-        toast({
-          title: 'Password Generation Failed',
-          description: 'Could not generate a password with the given inputs. Please try modifying your field values.',
-          variant: 'destructive',
-        });
-      }
+      // Simulate a short delay for UX, as AI call was instant before
+      setTimeout(() => {
+        const newPassword = generateLocalPassword(fieldValuesInOrder);
+        if (newPassword) {
+          setGeneratedPassword(newPassword);
+        } else {
+          setError("Could not generate a password. Try different inputs.");
+          toast({
+            title: 'Password Generation Failed',
+            description: 'Could not generate a password with the given inputs. Please try modifying your field values.',
+            variant: 'destructive',
+          });
+        }
+        setIsLoading(false);
+      }, 50); // Minimal delay
     } catch (err) { 
       console.error("Error generating password:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -149,7 +207,6 @@ export default function HomePage() {
         description: `Password generation failed: ${errorMessage}`,
         variant: 'destructive',
       });
-    } finally {
       setIsLoading(false);
     }
   };
@@ -162,7 +219,7 @@ export default function HomePage() {
       setGeneratedPassword(''); 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields]);
+  }, [fields]); // Rerun when fields change (value, included, order)
 
   return (
     <div className="space-y-8">
@@ -235,3 +292,4 @@ export default function HomePage() {
     </div>
   );
 }
+
