@@ -27,7 +27,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
   useEffect(() => {
     // Set the stored value from localStorage after the initial render.
     setStoredValue(readValueFromStorage());
-  }, [readValueFromStorage]); // readValueFromStorage is memoized and its dependencies [initialValue, key] are handled by useCallback.
+  }, [readValueFromStorage]);
 
   // Wrapped version of useState's setter function that persists the new value to localStorage.
   const setValue = useCallback(
@@ -41,18 +41,24 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
       }
 
       try {
-        // Allow value to be a function so we have same API as useState
-        const valueToStore =
-          value instanceof Function ? value(storedValue) : value;
-        // Save state
-        setStoredValue(valueToStore);
-        // Save to local storage
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        // Use setStoredValue's functional update form to ensure we're working with the latest state
+        // This avoids needing 'storedValue' in the dependency array of this useCallback.
+        if (value instanceof Function) {
+          setStoredValue(currentVal => {
+            const valueToStore = value(currentVal);
+            window.localStorage.setItem(key, JSON.stringify(valueToStore));
+            return valueToStore;
+          });
+        } else {
+          const valueToStore = value;
+          setStoredValue(valueToStore);
+          window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        }
       } catch (error) {
         console.warn(`Error setting localStorage key “${key}”:`, error);
       }
     },
-    [key, storedValue] // Include storedValue as a dependency because it's used in the functional update form of setValue.
+    [key] // Only depend on `key`. `setStoredValue` handles getting the latest state.
   );
 
   // Effect to listen for storage changes from other tabs/windows.
