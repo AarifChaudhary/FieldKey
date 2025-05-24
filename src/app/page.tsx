@@ -10,8 +10,9 @@ import FieldList from '@/components/fields/field-list';
 import PasswordDisplay from '@/components/password-display';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, Save } from 'lucide-react'; // Added Save icon
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useRouter } from 'next/navigation'; // Added useRouter
 
 const MAX_FIELDS = 10;
 const PASSWORD_MIN_LENGTH = 8;
@@ -75,9 +76,8 @@ function generateLocalPassword(fieldValues: string[]): string {
       tempPasswordArray.push(charToAdd);
     } else {
       // Replace characters from the end to ensure complexity
-      // The (neededComplexityChars.length - 1 - i) ensures we replace distinct positions for each needed char
       const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i;
-      if (replacementIndex >= 0) { // Should be safe given PASSWORD_MAX_LENGTH
+      if (replacementIndex >= 0 && replacementIndex < tempPasswordArray.length) {
          tempPasswordArray[replacementIndex] = charToAdd;
       }
     }
@@ -93,7 +93,7 @@ function generateLocalPassword(fieldValues: string[]): string {
   }
   password = tempPasswordArray.join('');
 
-  // Final truncation if somehow it became too long (e.g. padding after complexity replacement at max length, though unlikely with current logic)
+  // Final truncation if somehow it became too long 
   if (password.length > PASSWORD_MAX_LENGTH) {
     password = password.substring(0, PASSWORD_MAX_LENGTH);
   }
@@ -111,6 +111,7 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState<boolean>(false); 
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const router = useRouter(); // Initialize router
 
   const handleAddField = () => {
     if (fields.length < MAX_FIELDS) {
@@ -166,7 +167,7 @@ export default function HomePage() {
             description: 'Please add values to your fields and ensure they are included.',
             variant: 'destructive',
         });
-      } else { // Included fields exist, but their values are empty strings
+      } else { 
          toast({
             title: 'Included fields are effectively empty',
             description: 'Please ensure your included fields have non-whitespace values.',
@@ -183,7 +184,6 @@ export default function HomePage() {
     setGeneratedPassword(''); 
 
     try {
-      // Simulate a short delay for UX, as AI call was instant before
       setTimeout(() => {
         const newPassword = generateLocalPassword(fieldValuesInOrder);
         if (newPassword) {
@@ -197,7 +197,7 @@ export default function HomePage() {
           });
         }
         setIsLoading(false);
-      }, 50); // Minimal delay
+      }, 50); 
     } catch (err) { 
       console.error("Error generating password:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -219,7 +219,25 @@ export default function HomePage() {
       setGeneratedPassword(''); 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields]); // Rerun when fields change (value, included, order)
+  }, [fields]); 
+
+  const handleSaveLayoutAsPreset = () => {
+    if (fields.length === 0) {
+      toast({
+        title: 'No fields to save',
+        description: 'Please add some fields before saving a preset.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const fieldsForPreset = fields.map(({ id, label, included }) => ({ id, label, included }));
+    localStorage.setItem('fieldkey-fields-to-preset', JSON.stringify(fieldsForPreset));
+    toast({
+      title: 'Field Layout Ready',
+      description: 'Navigating to Presets page to name and save your field layout.',
+    });
+    router.push('/presets');
+  };
 
   return (
     <div className="space-y-8">
@@ -244,9 +262,15 @@ export default function HomePage() {
               onRemoveField={handleRemoveField}
               setFields={setFields}
             />
-            <Button onClick={handleAddField} variant="outline" className="mt-4" disabled={fields.length >= MAX_FIELDS}>
-              Add Field
-            </Button>
+            <div className="mt-4 flex flex-wrap gap-2">
+                <Button onClick={handleAddField} variant="outline" disabled={fields.length >= MAX_FIELDS}>
+                  Add Field
+                </Button>
+                <Button onClick={handleSaveLayoutAsPreset} variant="outline">
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Field Layout as Preset
+                </Button>
+            </div>
           </div>
 
           <Separator />
@@ -277,14 +301,14 @@ export default function HomePage() {
           </div>
         </CardContent>
         <CardFooter>
-           <Button onClick={handleGeneratePassword} disabled={isLoading} size="lg" className="w-full md:w-auto">
+           <Button onClick={handleGeneratePassword} disabled={isLoading || !fields.some(f => f.included && f.value.trim() !== '')} size="lg" className="w-full md:w-auto">
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Generating...
               </>
             ) : (
-              'Generate Password Manually'
+              'Regenerate Password'
             )}
           </Button>
         </CardFooter>
@@ -292,4 +316,3 @@ export default function HomePage() {
     </div>
   );
 }
-
