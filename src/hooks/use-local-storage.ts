@@ -1,12 +1,15 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
-  // Get from local storage then
-  // parse stored json or return initialValue
-  const readValue = useCallback((): T => {
-    // Prevent build errors "window is undefined" but keep keep working
+  // Initialize state with initialValue to ensure consistency between server and initial client render.
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+
+  // Memoized function to read the value from localStorage.
+  const readValueFromStorage = useCallback((): T => {
+    // Prevent build errors "window is undefined" but keep working
     if (typeof window === 'undefined') {
       return initialValue;
     }
@@ -20,46 +23,55 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
     }
   }, [initialValue, key]);
 
-  // State to store our value
-  // Pass initial state function to useState so logic is only executed once
-  const [storedValue, setStoredValue] = useState<T>(readValue);
+  // Effect to read the value from localStorage after the component has mounted on the client.
+  useEffect(() => {
+    // Set the stored value from localStorage after the initial render.
+    setStoredValue(readValueFromStorage());
+  }, [readValueFromStorage]); // readValueFromStorage is memoized and its dependencies [initialValue, key] are handled by useCallback.
 
-  // Return a wrapped version of useState's setter function that ...
-  // ... persists the new value to localStorage.
-  const setValue = (value: T | ((val: T) => T)) => {
-    // Prevent build errors "window is undefined" but keep keep working
+  // Wrapped version of useState's setter function that persists the new value to localStorage.
+  const setValue = useCallback(
+    (value: T | ((val: T) => T)) => {
+      // Prevent build errors "window is undefined"
+      if (typeof window === 'undefined') {
+        console.warn(
+          `Tried setting localStorage key “${key}” even though environment is not a client`
+        );
+        return;
+      }
+
+      try {
+        // Allow value to be a function so we have same API as useState
+        const valueToStore =
+          value instanceof Function ? value(storedValue) : value;
+        // Save state
+        setStoredValue(valueToStore);
+        // Save to local storage
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      } catch (error) {
+        console.warn(`Error setting localStorage key “${key}”:`, error);
+      }
+    },
+    [key, storedValue] // Include storedValue as a dependency because it's used in the functional update form of setValue.
+  );
+
+  // Effect to listen for storage changes from other tabs/windows.
+  useEffect(() => {
     if (typeof window === 'undefined') {
-      console.warn(
-        `Tried setting localStorage key “${key}” even though environment is not a client`
-      );
+      return; // Ensure this runs only on the client
     }
 
-    try {
-      // Allow value to be a function so we have same API as useState
-      const valueToStore =
-        value instanceof Function ? value(storedValue) : value;
-      // Save state
-      setStoredValue(valueToStore);
-      // Save to local storage
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch (error) {
-      console.warn(`Error setting localStorage key “${key}”:`, error);
-    }
-  };
-  
-  useEffect(() => {
-    setStoredValue(readValue());
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-
-  useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === key && event.newValue) {
-        try {
-          setStoredValue(JSON.parse(event.newValue) as T);
-        } catch (error) {
-          console.warn(`Error parsing localStorage key “${key}” on storage event:`, error);
+      if (event.key === key) {
+        if (event.newValue) {
+          try {
+            setStoredValue(JSON.parse(event.newValue) as T);
+          } catch (error) {
+            console.warn(`Error parsing localStorage key “${key}” on storage event:`, error);
+          }
+        } else {
+          // Item was removed or cleared from another tab
+          setStoredValue(initialValue);
         }
       }
     };
@@ -68,8 +80,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [key]);
-
+  }, [key, initialValue]);
 
   return [storedValue, setValue];
 }
