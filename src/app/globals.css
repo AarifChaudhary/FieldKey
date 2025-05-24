@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -105,5 +106,19 @@
   body {
     @apply bg-background text-foreground;
     /* font-family removed as Geist is applied via layout.tsx */
+  }
+}
+
+/* Added keyframes for bubble animation */
+@keyframes float-and-fade {
+  0% {
+    /* Start centered relative to its spawn point (left/top in style) */
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1; /* Start opacity is controlled by inline style's backgroundColor alpha */
+  }
+  100% {
+    /* Move to final destination and shrink */
+    transform: translate(calc(-50% + var(--final-x)), calc(-50% + var(--final-y))) scale(0.3);
+    opacity: 0;
   }
 }
