@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import type { Preset, PresetFieldDefinition } from '@/lib/types';
+import type { Preset, PresetFieldDefinition } from '@/lib/types'; // PresetFieldDefinition might not be strictly needed here anymore for creation
 import useLocalStorage from '@/hooks/use-local-storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,88 +10,55 @@ import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { PlusCircle, Edit3, Trash2, UploadCloud } from 'lucide-react'; // Removed CheckCircle
+import { Edit3, Trash2, UploadCloud } from 'lucide-react';
+import { PRESETS_STORAGE_KEY, TEMP_FIELDS_STORAGE_KEY } from '@/lib/constants';
+import { useRouter } from 'next/navigation';
 
-const PRESETS_STORAGE_KEY = 'fieldkey-presets';
-const TEMP_FIELDS_STORAGE_KEY = 'fieldkey-fields-to-preset';
 
 export default function PresetsPage() {
   const [presets, setPresets] = useLocalStorage<Preset[]>(PRESETS_STORAGE_KEY, []);
-  const [newPresetName, setNewPresetName] = useState('');
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
-  const [currentFieldsForNewPreset, setCurrentFieldsForNewPreset] = useState<PresetFieldDefinition[]>([]);
+  const [renamePresetName, setRenamePresetName] = useState(''); // For rename modal
   const { toast } = useToast();
+  const router = useRouter();
 
+  // This useEffect is now primarily for feedback if the user lands here after clicking "Save Field Layout"
+  // on the generator page, as the actual saving logic is now on the generator page.
+  // Or, if there was an old TEMP_FIELDS_STORAGE_KEY value, we clear it.
   useEffect(() => {
     const fieldsToPresetJSON = localStorage.getItem(TEMP_FIELDS_STORAGE_KEY);
     if (fieldsToPresetJSON) {
-      try {
-        const parsedFields: PresetFieldDefinition[] = JSON.parse(fieldsToPresetJSON);
-        setCurrentFieldsForNewPreset(parsedFields);
-        // Focus the input field for preset name if fields were loaded
-        const nameInput = document.getElementById('new-preset-name-input');
-        if (nameInput) {
-          nameInput.focus();
-        }
-        toast({
-          title: "Field Layout Loaded",
-          description: "Enter a name for your new preset based on the field layout from the generator page.",
-        });
-      } catch (error) {
-        console.error("Error parsing fields from localStorage:", error);
-        toast({ title: "Error loading field layout", variant: "destructive" });
-        setCurrentFieldsForNewPreset([]); // Reset to empty if parsing fails
-      } finally {
-        localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY); // Clean up immediately after trying to load
-      }
-    } else {
-      // If no fields passed, initialize with a default structure or empty.
-      // For now, an empty array is fine. User can still define presets manually if desired,
-      // though primary flow is from generator.
-      setCurrentFieldsForNewPreset([]);
+      // This key is now mainly for *loading* presets onto the generator page.
+      // If it exists when landing here, it's likely stale from a previous "Load" action
+      // or an incomplete save flow before the modal was implemented.
+      // We can clear it to prevent confusion.
+      localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY);
+      toast({
+          title: "Ready to Manage Presets",
+          description: "Create new presets directly from the Generator page using the 'Save Field Layout' button.",
+          variant: "default" 
+      });
     }
   }, [toast]);
 
 
-  const handleSavePreset = () => {
-    if (!newPresetName.trim()) {
-      toast({ title: 'Preset name required', variant: 'destructive' });
-      return;
-    }
-    if (currentFieldsForNewPreset.length === 0) {
-        toast({ title: 'No field layout to save', description: 'Define a field layout on the Generator page first, then click "Save Field Layout as Preset".', variant: 'destructive' });
-        return;
-    }
-
-    const newPreset: Preset = {
-      id: Date.now().toString(), 
-      name: newPresetName.trim(),
-      fields: currentFieldsForNewPreset,
-    };
-    setPresets([...presets, newPreset]);
-    setNewPresetName('');
-    setCurrentFieldsForNewPreset([]); // Clear fields after saving
-    toast({ title: 'Preset Saved', description: `"${newPreset.name}" has been saved.` });
-  };
-
   const handleLoadPreset = (presetId: string) => {
     const presetToLoad = presets.find(p => p.id === presetId);
     if (presetToLoad) {
-      // Store the preset's fields in localStorage for the generator page to pick up
       localStorage.setItem(TEMP_FIELDS_STORAGE_KEY, JSON.stringify(presetToLoad.fields));
-      toast({ title: 'Preset Loaded', description: `"${presetToLoad.name}" is ready. Go to the Generator page to use it.` });
-      // Optionally, navigate to generator page: router.push('/'); (requires importing useRouter)
+      toast({ title: 'Preset Fields Copied', description: `"${presetToLoad.name}" field layout is ready. Navigating to the Generator page...` });
+      router.push('/');
     }
   };
 
   const handleRenamePreset = () => {
-    if (!editingPreset || !newPresetName.trim()) {
-      toast({ title: 'Error renaming preset', variant: 'destructive' });
+    if (!editingPreset || !renamePresetName.trim()) {
+      toast({ title: 'Error renaming preset', description: 'Preset name cannot be empty.', variant: 'destructive' });
       return;
     }
-    setPresets(presets.map(p => p.id === editingPreset.id ? { ...p, name: newPresetName.trim() } : p));
+    setPresets(presets.map(p => p.id === editingPreset.id ? { ...p, name: renamePresetName.trim() } : p));
     setEditingPreset(null);
-    setNewPresetName(''); // Clear input after renaming
+    setRenamePresetName('');
     toast({ title: 'Preset Renamed' });
   };
 
@@ -106,60 +73,42 @@ export default function PresetsPage() {
         <CardHeader>
           <CardTitle className="text-3xl">Manage Presets</CardTitle>
           <CardDescription>
-            Save and load your field layouts (labels, order, and include status). Field values are not stored.
+            Load, rename, or delete your saved field layouts. Values are not stored in presets.
+            To create a new preset, use the "Save Field Layout as Preset" button on the Generator page.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2 p-4 border rounded-lg bg-card/30">
-            <h3 className="text-xl font-semibold">
-              {currentFieldsForNewPreset.length > 0 ? "Save Imported Field Layout" : "Create New Preset Manually"}
-            </h3>
-            {currentFieldsForNewPreset.length > 0 && (
-              <div className="mb-3 p-3 border rounded-md bg-background">
-                <p className="text-sm font-medium">Fields to be saved in this preset:</p>
-                <ul className="list-disc list-inside text-xs text-muted-foreground">
-                  {currentFieldsForNewPreset.map(f => <li key={f.id}>{f.label} ({f.included ? "Included" : "Not Included"})</li>)}
-                </ul>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Input
-                id="new-preset-name-input"
-                type="text"
-                placeholder="New preset name"
-                value={newPresetName}
-                onChange={(e) => setNewPresetName(e.target.value)}
-              />
-              <Button onClick={handleSavePreset} disabled={currentFieldsForNewPreset.length === 0 && !newPresetName.trim()}> 
-                {/* Disable if no fields AND no name for manual creation (though manual creation is not primary) */}
-                <PlusCircle className="mr-2 h-4 w-4" /> Save Preset
-              </Button>
-            </div>
-             <p className="text-xs text-muted-foreground">
-              {currentFieldsForNewPreset.length > 0 
-                ? "The field layout from the Generator page is ready. Enter a name and save."
-                : 'To save a field layout, first configure fields on the Generator page and click "Save Field Layout as Preset".'}
-            </p>
-          </div>
-
           <div className="space-y-2">
             <h3 className="text-xl font-semibold">Your Saved Presets</h3>
             {presets.length === 0 ? (
-              <p className="text-muted-foreground">You have no saved presets.</p>
+              <p className="text-muted-foreground">
+                You have no saved presets. Go to the Generator page to create one.
+              </p>
             ) : (
-              <ScrollArea className="h-72 rounded-md border">
+              <ScrollArea className="h-96 rounded-md border"> {/* Increased height */}
                 <div className="p-4 space-y-3">
                 {presets.map((preset) => (
                   <Card key={preset.id} className="p-3">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{preset.name}</span>
-                      <div className="space-x-2">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-center space-y-2 sm:space-y-0">
+                      <span className="font-medium flex-1 min-w-0 break-words pr-2">{preset.name}</span>
+                      <div className="flex space-x-2 flex-shrink-0">
                         <Button variant="outline" size="sm" onClick={() => handleLoadPreset(preset.id)}>
                           <UploadCloud className="mr-2 h-4 w-4" /> Load
                         </Button>
-                        <Dialog onOpenChange={(open) => { if (!open) { setEditingPreset(null); setNewPresetName(''); } }}>
+                        <Dialog 
+                            open={editingPreset?.id === preset.id} 
+                            onOpenChange={(open) => { 
+                                if (open) {
+                                    setEditingPreset(preset); 
+                                    setRenamePresetName(preset.name);
+                                } else {
+                                    setEditingPreset(null); 
+                                    setRenamePresetName('');
+                                }
+                            }}
+                        >
                           <DialogTrigger asChild>
-                            <Button variant="outline" size="sm" onClick={() => { setEditingPreset(preset); setNewPresetName(preset.name); }}>
+                            <Button variant="outline" size="sm">
                               <Edit3 className="mr-2 h-4 w-4" /> Rename
                             </Button>
                           </DialogTrigger>
@@ -169,9 +118,10 @@ export default function PresetsPage() {
                               <DialogDescription>Enter a new name for "{editingPreset?.name}".</DialogDescription>
                             </DialogHeader>
                             <Input
-                              value={newPresetName}
-                              onChange={(e) => setNewPresetName(e.target.value)}
+                              value={renamePresetName}
+                              onChange={(e) => setRenamePresetName(e.target.value)}
                               placeholder="New preset name"
+                              className="my-4"
                             />
                             <DialogFooter>
                                <DialogClose asChild>
@@ -204,7 +154,7 @@ export default function PresetsPage() {
                         </Dialog>
                       </div>
                     </div>
-                     <p className="text-xs text-muted-foreground mt-1">
+                     <p className="text-xs text-muted-foreground mt-2 break-words">
                         Fields: {preset.fields.map(f => `${f.label} (${f.included ? "Incl." : "Excl."})`).join(', ')}
                     </p>
                   </Card>
@@ -218,4 +168,3 @@ export default function PresetsPage() {
     </div>
   );
 }
-

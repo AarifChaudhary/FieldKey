@@ -3,21 +3,24 @@
 
 import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type { FieldDefinition } from '@/lib/types';
+import type { FieldDefinition, Preset, PresetFieldDefinition } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import FieldList from '@/components/fields/field-list';
 import PasswordDisplay from '@/components/password-display';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { AlertCircle, Loader2, Save } from 'lucide-react'; // Added Save icon
+import { AlertCircle, Loader2, Save } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useRouter } from 'next/navigation'; // Added useRouter
+import { useRouter } from 'next/navigation';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PRESETS_STORAGE_KEY, TEMP_FIELDS_STORAGE_KEY } from '@/lib/constants';
 
 const MAX_FIELDS = 10;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 16;
-// Using a fixed set of characters for deterministic padding and complexity.
 const PADDING_CHARS = "!@#$%^&*()-_=+[]{};:,.<>/?abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const COMPLEXITY_CHARS = {
   uppercase: 'A',
@@ -26,7 +29,6 @@ const COMPLEXITY_CHARS = {
   special: '!',
 };
 
-// Deterministic local password generation logic
 function generateLocalPassword(fieldValues: string[]): string {
   if (fieldValues.length === 0) {
     return '';
@@ -34,7 +36,6 @@ function generateLocalPassword(fieldValues: string[]): string {
 
   let rawPasswordChars: string[] = [];
   let charIndex = 0;
-  // Max charIndex of 100 is a safety break, actual break is when no more chars can be added or max length is reached.
   while (rawPasswordChars.length < PASSWORD_MAX_LENGTH && charIndex < 100) {
     let charAddedInThisPass = false;
     for (const value of fieldValues) {
@@ -43,12 +44,11 @@ function generateLocalPassword(fieldValues: string[]): string {
           rawPasswordChars.push(value[charIndex]);
           charAddedInThisPass = true;
         } else {
-          break; // Max password length reached
+          break;
         }
       }
     }
     if (!charAddedInThisPass) {
-      // If no characters were added from any field at this charIndex, we're done with interleaving.
       break;
     }
     charIndex++;
@@ -56,7 +56,6 @@ function generateLocalPassword(fieldValues: string[]): string {
   
   let password = rawPasswordChars.join('');
 
-  // Ensure basic complexity
   let hasUppercase = /[A-Z]/.test(password);
   let hasLowercase = /[a-z]/.test(password);
   let hasNumber = /\d/.test(password);
@@ -75,7 +74,6 @@ function generateLocalPassword(fieldValues: string[]): string {
     if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
       tempPasswordArray.push(charToAdd);
     } else {
-      // Replace characters from the end to ensure complexity
       const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i;
       if (replacementIndex >= 0 && replacementIndex < tempPasswordArray.length) {
          tempPasswordArray[replacementIndex] = charToAdd;
@@ -84,16 +82,14 @@ function generateLocalPassword(fieldValues: string[]): string {
   }
   password = tempPasswordArray.join('');
   
-  // Adjust length: Pad if too short
   let paddingLoopIndex = 0;
-  tempPasswordArray = password.split(''); // Re-split as it might have changed
+  tempPasswordArray = password.split('');
   while (tempPasswordArray.length < PASSWORD_MIN_LENGTH) {
     tempPasswordArray.push(PADDING_CHARS.charAt(paddingLoopIndex % PADDING_CHARS.length));
     paddingLoopIndex++;
   }
   password = tempPasswordArray.join('');
 
-  // Final truncation if somehow it became too long 
   if (password.length > PASSWORD_MAX_LENGTH) {
     password = password.substring(0, PASSWORD_MAX_LENGTH);
   }
@@ -101,9 +97,8 @@ function generateLocalPassword(fieldValues: string[]): string {
   return password;
 }
 
-
 export default function HomePage() {
-  const [fields, setFields] = useState<FieldDefinition[]>(() => [
+  const [fields, setFields] = useState<FieldDefinition[]>([
     { id: 'initial-field-site-name', label: 'Site Name', value: '', included: true },
     { id: 'initial-field-username', label: 'Username', value: '', included: true },
   ]);
@@ -111,7 +106,34 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState<boolean>(false); 
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
+
+  const [isSavePresetModalOpen, setSavePresetModalOpen] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+
+  useEffect(() => {
+    const fieldsToLoadJSON = localStorage.getItem(TEMP_FIELDS_STORAGE_KEY);
+    if (fieldsToLoadJSON) {
+      try {
+        const presetFields: PresetFieldDefinition[] = JSON.parse(fieldsToLoadJSON);
+        const newFields: FieldDefinition[] = presetFields.map(pf => ({
+          ...pf,
+          value: '', // Values are not stored in presets
+        }));
+        setFields(newFields);
+        toast({
+          title: 'Preset Fields Loaded',
+          description: 'The field layout has been applied. Enter new values to generate a password.',
+        });
+      } catch (e) {
+        console.error("Error loading preset fields:", e);
+        toast({ title: 'Error Loading Preset Fields', variant: 'destructive' });
+      } finally {
+        localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY);
+      }
+    }
+  }, [toast]);
+
 
   const handleAddField = () => {
     if (fields.length < MAX_FIELDS) {
@@ -221,22 +243,37 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields]); 
 
-  const handleSaveLayoutAsPreset = () => {
-    if (fields.length === 0) {
-      toast({
-        title: 'No fields to save',
-        description: 'Please add some fields before saving a preset.',
-        variant: 'destructive',
-      });
+  const handleConfirmSavePreset = () => {
+    if (!newPresetName.trim()) {
+      toast({ title: 'Preset name required', variant: 'destructive' });
       return;
     }
-    const fieldsForPreset = fields.map(({ id, label, included }) => ({ id, label, included }));
-    localStorage.setItem('fieldkey-fields-to-preset', JSON.stringify(fieldsForPreset));
-    toast({
-      title: 'Field Layout Ready',
-      description: 'Navigating to Presets page to name and save your field layout.',
-    });
-    router.push('/presets');
+    if (fields.length === 0) {
+      toast({ title: 'No field layout to save', description: 'Add fields before saving.', variant: 'destructive' });
+      return;
+    }
+
+    const fieldsForPreset: PresetFieldDefinition[] = fields.map(({ id, label, included }) => ({ id, label, included }));
+    const newPreset: Preset = {
+      id: uuidv4(),
+      name: newPresetName.trim(),
+      fields: fieldsForPreset,
+    };
+
+    try {
+      const existingPresetsJSON = localStorage.getItem(PRESETS_STORAGE_KEY);
+      const existingPresets: Preset[] = existingPresetsJSON ? JSON.parse(existingPresetsJSON) : [];
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify([...existingPresets, newPreset]));
+      toast({
+        title: 'Preset Saved!',
+        description: `"${newPreset.name}" has been saved. You can manage it on the Presets page.`,
+      });
+      setNewPresetName('');
+      setSavePresetModalOpen(false);
+    } catch (error) {
+      console.error("Error saving preset to localStorage:", error);
+      toast({ title: 'Failed to Save Preset', variant: 'destructive' });
+    }
   };
 
   return (
@@ -266,10 +303,42 @@ export default function HomePage() {
                 <Button onClick={handleAddField} variant="outline" disabled={fields.length >= MAX_FIELDS}>
                   Add Field
                 </Button>
-                <Button onClick={handleSaveLayoutAsPreset} variant="outline">
-                  <Save className="mr-2 h-4 w-4" />
-                  Save Field Layout as Preset
-                </Button>
+                <Dialog open={isSavePresetModalOpen} onOpenChange={setSavePresetModalOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" disabled={fields.length === 0}>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Field Layout as Preset
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Save Preset Layout</DialogTitle>
+                      <DialogDescription>
+                        Enter a name for your current field layout. Field values are not saved.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="preset-name" className="text-right">
+                          Name
+                        </Label>
+                        <Input
+                          id="preset-name"
+                          value={newPresetName}
+                          onChange={(e) => setNewPresetName(e.target.value)}
+                          className="col-span-3"
+                          placeholder="e.g., Social Media Fields"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <DialogClose asChild>
+                        <Button variant="outline">Cancel</Button>
+                      </DialogClose>
+                      <Button onClick={handleConfirmSavePreset}>Save Preset</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
             </div>
           </div>
 
