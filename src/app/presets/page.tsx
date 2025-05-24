@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
-import type { Preset, PresetFieldDefinition } from '@/lib/types'; // PresetFieldDefinition might not be strictly needed here anymore for creation
+import { useState, useEffect, useMemo } from 'react'; // Added useMemo
+import type { Preset } from '@/lib/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,27 +16,23 @@ import { useRouter } from 'next/navigation';
 
 
 export default function PresetsPage() {
-  const [presets, setPresets] = useLocalStorage<Preset[]>(PRESETS_STORAGE_KEY, []);
+  // Use useMemo for initialPresets to ensure stable reference
+  const initialPresets = useMemo(() => [], []);
+  const [presets, setPresets] = useLocalStorage<Preset[]>(PRESETS_STORAGE_KEY, initialPresets);
+
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [renamePresetName, setRenamePresetName] = useState(''); // For rename modal
   const { toast } = useToast();
   const router = useRouter();
 
-  // This useEffect is now primarily for feedback if the user lands here after clicking "Save Field Layout"
-  // on the generator page, as the actual saving logic is now on the generator page.
-  // Or, if there was an old TEMP_FIELDS_STORAGE_KEY value, we clear it.
   useEffect(() => {
     const fieldsToPresetJSON = localStorage.getItem(TEMP_FIELDS_STORAGE_KEY);
     if (fieldsToPresetJSON) {
-      // This key is now mainly for *loading* presets onto the generator page.
-      // If it exists when landing here, it's likely stale from a previous "Load" action
-      // or an incomplete save flow before the modal was implemented.
-      // We can clear it to prevent confusion.
       localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY);
       toast({
           title: "Ready to Manage Presets",
           description: "Create new presets directly from the Generator page using the 'Save Field Layout' button.",
-          variant: "default" 
+          variant: "default"
       });
     }
   }, [toast]);
@@ -95,14 +91,14 @@ export default function PresetsPage() {
                         <Button variant="outline" size="sm" onClick={() => handleLoadPreset(preset.id)}>
                           <UploadCloud className="mr-2 h-4 w-4" /> Load
                         </Button>
-                        <Dialog 
-                            open={editingPreset?.id === preset.id} 
-                            onOpenChange={(open) => { 
+                        <Dialog
+                            open={editingPreset?.id === preset.id}
+                            onOpenChange={(open) => {
                                 if (open) {
-                                    setEditingPreset(preset); 
+                                    setEditingPreset(preset);
                                     setRenamePresetName(preset.name);
                                 } else {
-                                    setEditingPreset(null); 
+                                    setEditingPreset(null);
                                     setRenamePresetName('');
                                 }
                             }}
