@@ -1,9 +1,12 @@
+
 "use client";
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
+// These are the items for the desktop navigation.
+// Mobile navigation items are now defined directly in header.tsx within the Sheet.
 const navItems = [
   { href: '/', label: 'Generator' },
   { href: '/presets', label: 'Presets' },

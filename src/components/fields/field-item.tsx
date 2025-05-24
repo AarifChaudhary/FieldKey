@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useSortable } from '@dnd-kit/sortable';
@@ -36,12 +37,12 @@ export default function FieldItem({ field, onFieldChange, onRemoveField, isOnlyF
 
   return (
     <Card ref={setNodeRef} style={style} className="bg-card/50 border rounded-lg">
-      <CardContent className="p-4 flex items-center space-x-3">
-        <Button variant="ghost" size="icon" {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1" aria-label="Drag to reorder field">
+      <CardContent className="p-4 flex items-center space-x-2 sm:space-x-3">
+        <Button variant="ghost" size="icon" {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 flex-shrink-0" aria-label="Drag to reorder field">
           <GripVertical className="h-5 w-5 text-muted-foreground" />
         </Button>
         
-        <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+        <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-2 items-end">
           <div className="space-y-1">
             <Label htmlFor={`label-${field.id}`} className="text-xs">Label</Label>
             <Input
@@ -66,7 +67,7 @@ export default function FieldItem({ field, onFieldChange, onRemoveField, isOnlyF
           </div>
         </div>
 
-        <div className="flex flex-col items-center space-y-1 md:pl-3">
+        <div className="flex flex-col items-center space-y-1 px-1 sm:px-2 md:pl-3 flex-shrink-0">
           <Label htmlFor={`included-${field.id}`} className="text-xs">Include</Label>
           <Switch
             id={`included-${field.id}`}
@@ -81,7 +82,7 @@ export default function FieldItem({ field, onFieldChange, onRemoveField, isOnlyF
           onClick={() => onRemoveField(field.id)}
           disabled={isOnlyField}
           aria-label="Remove field"
-          className="p-1"
+          className="p-1 flex-shrink-0"
         >
           <Trash2 className="h-5 w-5 text-destructive/80 hover:text-destructive" />
         </Button>

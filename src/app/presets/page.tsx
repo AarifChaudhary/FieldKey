@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from 'react'; // Added useMemo
+import { useState, useEffect, useMemo } from 'react'; 
 import type { Preset } from '@/lib/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { Button } from '@/components/ui/button';
@@ -16,22 +16,23 @@ import { useRouter } from 'next/navigation';
 
 
 export default function PresetsPage() {
-  // Use useMemo for initialPresets to ensure stable reference
   const initialPresets = useMemo(() => [], []);
   const [presets, setPresets] = useLocalStorage<Preset[]>(PRESETS_STORAGE_KEY, initialPresets);
 
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
-  const [renamePresetName, setRenamePresetName] = useState(''); // For rename modal
+  const [renamePresetName, setRenamePresetName] = useState('');
   const { toast } = useToast();
   const router = useRouter();
 
   useEffect(() => {
+    // This effect is just to clear any lingering temp storage if user navigates here directly
+    // without going through the "Save Preset" flow from the generator page.
     const fieldsToPresetJSON = localStorage.getItem(TEMP_FIELDS_STORAGE_KEY);
     if (fieldsToPresetJSON) {
-      localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY);
+      localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY); // Clear it as it's stale
       toast({
-          title: "Ready to Manage Presets",
-          description: "Create new presets directly from the Generator page using the 'Save Field Layout' button.",
+          title: "Manage Presets",
+          description: "You can load, rename, or delete your saved presets here.",
           variant: "default"
       });
     }
@@ -81,14 +82,14 @@ export default function PresetsPage() {
                 You have no saved presets. Go to the Generator page to create one.
               </p>
             ) : (
-              <ScrollArea className="h-96 rounded-md border"> {/* Increased height */}
+              <ScrollArea className="h-96 rounded-md border">
                 <div className="p-4 space-y-3">
                 {presets.map((preset) => (
                   <Card key={preset.id} className="p-3">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center space-y-2 sm:space-y-0">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-center space-y-3 sm:space-y-0">
                       <span className="font-medium flex-1 min-w-0 break-words pr-2">{preset.name}</span>
-                      <div className="flex space-x-2 flex-shrink-0">
-                        <Button variant="outline" size="sm" onClick={() => handleLoadPreset(preset.id)}>
+                      <div className="flex flex-col space-y-2 xs:flex-row xs:space-y-0 xs:space-x-2 flex-shrink-0">
+                        <Button variant="outline" size="sm" onClick={() => handleLoadPreset(preset.id)} className="w-full xs:w-auto">
                           <UploadCloud className="mr-2 h-4 w-4" /> Load
                         </Button>
                         <Dialog
@@ -104,7 +105,7 @@ export default function PresetsPage() {
                             }}
                         >
                           <DialogTrigger asChild>
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" className="w-full xs:w-auto">
                               <Edit3 className="mr-2 h-4 w-4" /> Rename
                             </Button>
                           </DialogTrigger>
@@ -129,7 +130,7 @@ export default function PresetsPage() {
                         </Dialog>
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button variant="destructive" size="sm">
+                            <Button variant="destructive" size="sm" className="w-full xs:w-auto">
                               <Trash2 className="mr-2 h-4 w-4" /> Delete
                             </Button>
                           </DialogTrigger>

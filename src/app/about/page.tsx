@@ -2,7 +2,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
-import { Github, Linkedin, Server } from 'lucide-react'; // Using Server for React
+import { Github, Linkedin, Server } from 'lucide-react'; 
 import Image from 'next/image';
 
 export default function AboutPage() {
@@ -29,7 +29,7 @@ export default function AboutPage() {
           
           <div className="pt-4">
             <h3 className="text-2xl font-semibold mb-3">Built With</h3>
-            <div className="flex justify-center space-x-6">
+            <div className="flex flex-col items-center space-y-4 sm:flex-row sm:justify-center sm:space-y-0 sm:space-x-6">
               <div className="flex flex-col items-center" title="React & Next.js">
                 <Server className="h-10 w-10 text-primary mb-1" />
                 <span className="text-sm text-muted-foreground">React/Next.js</span>

@@ -36,7 +36,8 @@ function generateLocalPassword(fieldValues: string[]): string {
 
   let rawPasswordChars: string[] = [];
   let charIndex = 0;
-  while (rawPasswordChars.length < PASSWORD_MAX_LENGTH && charIndex < 100) {
+  // Interleave characters from each field value
+  while (rawPasswordChars.length < PASSWORD_MAX_LENGTH && charIndex < 100) { // charIndex < 100 as a safeguard
     let charAddedInThisPass = false;
     for (const value of fieldValues) {
       if (charIndex < value.length) {
@@ -44,18 +45,20 @@ function generateLocalPassword(fieldValues: string[]): string {
           rawPasswordChars.push(value[charIndex]);
           charAddedInThisPass = true;
         } else {
-          break;
+          break; // Max password length reached
         }
       }
     }
-    if (!charAddedInThisPass) {
+    if (!charAddedInThisPass && rawPasswordChars.length > 0) { // Stop if no more chars can be added from any field
       break;
     }
+    if (rawPasswordChars.length >= PASSWORD_MAX_LENGTH) break;
     charIndex++;
   }
   
   let password = rawPasswordChars.join('');
 
+  // Ensure complexity
   let hasUppercase = /[A-Z]/.test(password);
   let hasLowercase = /[a-z]/.test(password);
   let hasNumber = /\d/.test(password);
@@ -69,27 +72,33 @@ function generateLocalPassword(fieldValues: string[]): string {
   
   let tempPasswordArray = password.split('');
 
+  // Add or replace characters to meet complexity
   for (let i = 0; i < neededComplexityChars.length; i++) {
     const charToAdd = neededComplexityChars[i];
     if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
       tempPasswordArray.push(charToAdd);
     } else {
-      const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i;
+      // Replace characters from the end if password is at max length
+      const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i; // Ensure unique replacement spots for each needed char
       if (replacementIndex >= 0 && replacementIndex < tempPasswordArray.length) {
          tempPasswordArray[replacementIndex] = charToAdd;
       }
+      // If replacementIndex is out of bounds (e.g., too many complexity chars needed for short password)
+      // this specific complexity char might not be added. This is an edge case.
     }
   }
   password = tempPasswordArray.join('');
   
+  // Pad if necessary
   let paddingLoopIndex = 0;
-  tempPasswordArray = password.split('');
+  tempPasswordArray = password.split(''); // Re-split after complexity adjustments
   while (tempPasswordArray.length < PASSWORD_MIN_LENGTH) {
     tempPasswordArray.push(PADDING_CHARS.charAt(paddingLoopIndex % PADDING_CHARS.length));
     paddingLoopIndex++;
   }
   password = tempPasswordArray.join('');
 
+  // Final truncation if it somehow exceeded max length (e.g. from padding after complexity made it long)
   if (password.length > PASSWORD_MAX_LENGTH) {
     password = password.substring(0, PASSWORD_MAX_LENGTH);
   }
@@ -112,6 +121,8 @@ export default function HomePage() {
   const [newPresetName, setNewPresetName] = useState('');
 
   useEffect(() => {
+    // This effect runs when the component mounts or when `toast` changes.
+    // It's intended to load fields if they were set by the Presets page.
     const fieldsToLoadJSON = localStorage.getItem(TEMP_FIELDS_STORAGE_KEY);
     if (fieldsToLoadJSON) {
       try {
@@ -132,7 +143,7 @@ export default function HomePage() {
         localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY);
       }
     }
-  }, [toast]);
+  }, [toast]); // toast dependency is okay here
 
 
   const handleAddField = () => {
@@ -183,13 +194,13 @@ export default function HomePage() {
             description: 'Please provide values for your included fields.',
             variant: 'destructive',
         });
-      } else if (!anyFieldsIncluded && !anyFieldsHaveValue) {
+      } else if (!anyFieldsIncluded && !anyFieldsHaveValue) { // Both no included and no values
         toast({
             title: 'No inputs for password',
             description: 'Please add values to your fields and ensure they are included.',
             variant: 'destructive',
         });
-      } else { 
+      } else { // This case should ideally be caught by the specific ones above
          toast({
             title: 'Included fields are effectively empty',
             description: 'Please ensure your included fields have non-whitespace values.',
@@ -205,12 +216,14 @@ export default function HomePage() {
     setIsLoading(true); 
     setGeneratedPassword(''); 
 
+    // Simulate a slight delay for local generation to give feedback
     try {
-      setTimeout(() => {
+      setTimeout(() => { // Using setTimeout to ensure UI updates before potential blocking work
         const newPassword = generateLocalPassword(fieldValuesInOrder);
         if (newPassword) {
           setGeneratedPassword(newPassword);
         } else {
+          // This else block might be redundant if generateLocalPassword always returns something or empty string
           setError("Could not generate a password. Try different inputs.");
           toast({
             title: 'Password Generation Failed',
@@ -219,8 +232,8 @@ export default function HomePage() {
           });
         }
         setIsLoading(false);
-      }, 50); 
-    } catch (err) { 
+      }, 50); // Small delay
+    } catch (err) { // Catch unexpected errors in generateLocalPassword
       console.error("Error generating password:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to generate password: ${errorMessage}`);
@@ -233,15 +246,16 @@ export default function HomePage() {
     }
   };
 
+   // Effect to auto-generate password when fields change
    useEffect(() => {
     const hasIncludedInputsWithValue = fields.some(f => f.included && f.value.trim() !== '');
     if (hasIncludedInputsWithValue) {
       handleGeneratePassword();
     } else {
-      setGeneratedPassword(''); 
+      setGeneratedPassword(''); // Clear password if no valid inputs
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields]); 
+  }, [fields]); // This dependency array is correct as we want to regen on any field change.
 
   const handleConfirmSavePreset = () => {
     if (!newPresetName.trim()) {
