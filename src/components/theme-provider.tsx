@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FC, ReactNode } from 'react';
@@ -64,10 +65,14 @@ export const ThemeProvider: FC<ThemeProviderProps> = ({
     root.classList.add(effectiveTheme);
     setResolvedTheme(effectiveTheme);
     
-    root.style.setProperty('--primary-raw', currentPrimaryColor); // Store the raw HSL string
-    root.style.setProperty('--primary', `hsl(${currentPrimaryColor})`);
-    // Potentially adjust other colors based on primaryColor if needed, e.g., ring color
-    root.style.setProperty('--ring', `hsl(${currentPrimaryColor})`);
+    // Set the primary color CSS variable with just the HSL values.
+    // Tailwind's config (hsl(var(--primary))) will wrap this in hsl().
+    root.style.setProperty('--primary', currentPrimaryColor);
+    // Also update the ring color to match the primary color values.
+    root.style.setProperty('--ring', currentPrimaryColor);
+    // Storing the raw HSL string might be useful for other direct JS manipulations if needed.
+    root.style.setProperty('--primary-raw', currentPrimaryColor);
+
 
   }, []);
 
