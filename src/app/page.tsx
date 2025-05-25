@@ -33,72 +33,84 @@ function generateLocalPassword(fieldValues: string[]): string {
     return '';
   }
 
-  // 1. Interleave inputs to form the base
+  // 1. Process Each Field
+  const processedFieldValues = fieldValues.map(val => {
+    if (val.length <= 1) {
+      return val;
+    }
+    const firstChar = val[0];
+    const lastChar = val[val.length - 1];
+    const middlePart = val.substring(1, val.length - 1);
+    const reversedMiddle = middlePart.split('').reverse().join('');
+    return firstChar + reversedMiddle + lastChar;
+  });
+
+  // 2. Interleave Processed Values
   let interleavedChars: string[] = [];
   let charIndex = 0;
-  while (interleavedChars.length < PASSWORD_MAX_LENGTH && charIndex < 100) { // Safeguard charIndex
+  let interleaveLoopGuard = 0; 
+  while (interleavedChars.length < PASSWORD_MAX_LENGTH && interleaveLoopGuard < 100) {
     let charAddedInThisPass = false;
-    for (const value of fieldValues) {
+    for (const value of processedFieldValues) {
       if (charIndex < value.length) {
         if (interleavedChars.length < PASSWORD_MAX_LENGTH) {
           interleavedChars.push(value[charIndex]);
           charAddedInThisPass = true;
         } else {
-          break; 
+          break;
         }
       }
     }
-    if (!charAddedInThisPass && interleavedChars.length > 0) break; // All fields exhausted for this charIndex
+    if (!charAddedInThisPass && interleavedChars.length > 0) break;
     if (interleavedChars.length >= PASSWORD_MAX_LENGTH) break;
     charIndex++;
+    interleaveLoopGuard++;
   }
   
-  let tempPasswordArray = [...interleavedChars]; // Work with this array
+  let tempPasswordArray = [...interleavedChars];
 
-  // 2. Ensure Complexity by appending or replacing
+  // 3. Enforce Complexity (Using Defaults)
   let needsUppercase = !tempPasswordArray.some(char => /[A-Z]/.test(char));
   let needsLowercase = !tempPasswordArray.some(char => /[a-z]/.test(char));
   let needsNumber = !tempPasswordArray.some(char => /\d/.test(char));
   let needsSpecial = !tempPasswordArray.some(char => /[^A-Za-z0-9]/.test(char));
 
-  const fallbacksToAdd: string[] = [];
-  if (needsUppercase) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.uppercase);
-  if (needsLowercase) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.lowercase);
-  if (needsNumber) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.number);
-  if (needsSpecial) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.special);
-  
-  // Add fallbacks, replacing from the end if at max length
-  for (let i = 0; i < fallbacksToAdd.length; i++) {
-    const charToAdd = fallbacksToAdd[i];
+  const fallbacksToApply: { char: string, type: keyof typeof DEFAULT_COMPLEXITY_FALLBACKS }[] = [];
+  if (needsUppercase) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.uppercase, type: 'uppercase' });
+  if (needsLowercase) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.lowercase, type: 'lowercase' });
+  if (needsNumber) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.number, type: 'number' });
+  if (needsSpecial) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.special, type: 'special' });
+
+  // Apply fallbacks: append if space, otherwise replace from the end
+  for (let i = 0; i < fallbacksToApply.length; i++) {
+    const fallback = fallbacksToApply[i];
     if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
-      tempPasswordArray.push(charToAdd);
+      tempPasswordArray.push(fallback.char);
     } else if (tempPasswordArray.length > 0) {
-      const replacementIndex = Math.max(0, tempPasswordArray.length - fallbacksToAdd.length + i);
-      tempPasswordArray[replacementIndex] = charToAdd;
+      // Replace from the end, ensuring we don't go out of bounds
+      // and the replacement order is deterministic (e.g. last for uppercase, 2nd last for lowercase etc.)
+      const replacementIndex = Math.max(0, tempPasswordArray.length - 1 - i);
+      tempPasswordArray[replacementIndex] = fallback.char;
     }
   }
   
   let currentPassword = tempPasswordArray.join('');
 
-  // 3. Length Management (Padding with user's interleaved data)
+  // 4. Length Management (Padding)
   if (currentPassword.length < PASSWORD_MIN_LENGTH) {
-    let paddingSource = interleavedChars.join(''); 
+    let paddingSource = fieldValues.join(''); // Use original, non-processed values for padding pool
     if (paddingSource.length === 0) { 
       paddingSource = "FkSec#01"; 
     }
     
     let currentPaddingIndex = 0;
     while (currentPassword.length < PASSWORD_MIN_LENGTH) {
-      if (paddingSource.length > 0) { 
-        currentPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
-        currentPaddingIndex++;
-      } else { 
-        break; 
-      }
+      currentPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
+      currentPaddingIndex++;
     }
   }
 
-  // 4. Final Truncation
+  // 5. Final Truncation
   if (currentPassword.length > PASSWORD_MAX_LENGTH) {
     currentPassword = currentPassword.substring(0, PASSWORD_MAX_LENGTH);
   }
@@ -390,5 +402,6 @@ export default function HomePage() {
     </div>
   );
 }
+    
 
     
