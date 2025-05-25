@@ -14,7 +14,7 @@
     --popover: 220 13% 100%;
     --popover-foreground: 240 10% 3.9%;
     
-    --primary: 162 72% 48%; /* Vibrant Teal #20c997 */
+    --primary: 162 72% 48%; /* Vibrant Teal #20c997 - Default, overridden by ThemeProvider */
     --primary-foreground: 0 0% 100%; /* White */
     
     --secondary: 220 10% 90%; /* Lighter gray for secondary elements */
@@ -23,15 +23,18 @@
     --muted: 220 10% 90%;
     --muted-foreground: 240 5% 35%; /* Softer dark gray */
     
-    --accent: 162 60% 55%; /* Softer, lighter teal for themed hover */
-    --accent-foreground: 0 0% 100%; /* White for contrast on new accent */
+    /* --accent and --accent-foreground are now dynamically set by ThemeProvider.tsx */
+    /* Fallback accent for light theme (derived from default primary 162 72% 48%) */
+    /* H:162, S:72*0.9=~65, L:48+20=68. Text dark as 68 > 60. */
+    --accent: 162 65% 68%; 
+    --accent-foreground: 240 10% 3.9%;
     
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     
     --border: 220 10% 85%;
     --input: 220 10% 88%; /* Slightly lighter than border for better contrast on bg */
-    --ring: 162 72% 48%; /* Teal for focus rings */
+    --ring: 162 72% 48%; /* Teal for focus rings - Default, overridden by ThemeProvider */
     
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
@@ -62,7 +65,7 @@
     --popover: 240 6% 12%;
     --popover-foreground: 220 13% 97%;
     
-    --primary: 162 72% 48%; /* Vibrant Teal */
+    --primary: 162 72% 48%; /* Vibrant Teal - Default, overridden by ThemeProvider */
     --primary-foreground: 0 0% 100%; /* White */
     
     --secondary: 240 6% 15%; /* Lighter dark gray */
@@ -71,15 +74,18 @@
     --muted: 240 6% 15%;
     --muted-foreground: 220 10% 65%; /* Lighter gray */
     
-    --accent: 162 60% 35%; /* Softer, darker teal for themed hover */
-    --accent-foreground: 0 0% 100%; /* White for contrast on new accent */
+    /* --accent and --accent-foreground are now dynamically set by ThemeProvider.tsx */
+    /* Fallback accent for dark theme (derived from default primary 162 72% 48%) */
+    /* H:162, S:72*0.9=~65, L:48+15=63. Text dark as 63 > 55. */
+    --accent: 162 65% 63%; 
+    --accent-foreground: 240 10% 3.9%;
     
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     
     --border: 240 6% 20%;
     --input: 240 6% 22%; /* Slightly lighter than border */
-    --ring: 162 72% 48%; /* Teal */
+    --ring: 162 72% 48%; /* Teal - Default, overridden by ThemeProvider */
 
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
