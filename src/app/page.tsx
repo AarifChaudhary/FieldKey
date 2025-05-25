@@ -21,7 +21,7 @@ import { PRESETS_STORAGE_KEY, TEMP_FIELDS_STORAGE_KEY } from '@/lib/constants';
 const MAX_FIELDS = 10;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 16;
-const PADDING_CHARS = "!@#$%^&*()-_=+[]{};:,.<>/?abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+// PADDING_CHARS is removed as padding will now use user's input or a fixed short sequence.
 const COMPLEXITY_CHARS = {
   uppercase: 'A',
   lowercase: 'z',
@@ -56,13 +56,14 @@ function generateLocalPassword(fieldValues: string[]): string {
     charIndex++;
   }
   
-  let password = rawPasswordChars.join('');
+  let passwordAfterInterleaving = rawPasswordChars.join('');
+  let tempPasswordArray = passwordAfterInterleaving.split('');
 
   // Ensure complexity
-  let hasUppercase = /[A-Z]/.test(password);
-  let hasLowercase = /[a-z]/.test(password);
-  let hasNumber = /\d/.test(password);
-  let hasSpecial = /[^A-Za-z0-9]/.test(password);
+  let hasUppercase = /[A-Z]/.test(passwordAfterInterleaving);
+  let hasLowercase = /[a-z]/.test(passwordAfterInterleaving);
+  let hasNumber = /\d/.test(passwordAfterInterleaving);
+  let hasSpecial = /[^A-Za-z0-9]/.test(passwordAfterInterleaving);
 
   const neededComplexityChars: string[] = [];
   if (!hasUppercase) neededComplexityChars.push(COMPLEXITY_CHARS.uppercase);
@@ -70,8 +71,6 @@ function generateLocalPassword(fieldValues: string[]): string {
   if (!hasNumber) neededComplexityChars.push(COMPLEXITY_CHARS.number);
   if (!hasSpecial) neededComplexityChars.push(COMPLEXITY_CHARS.special);
   
-  let tempPasswordArray = password.split('');
-
   // Add or replace characters to meet complexity
   for (let i = 0; i < neededComplexityChars.length; i++) {
     const charToAdd = neededComplexityChars[i];
@@ -79,31 +78,46 @@ function generateLocalPassword(fieldValues: string[]): string {
       tempPasswordArray.push(charToAdd);
     } else {
       // Replace characters from the end if password is at max length
-      const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i; // Ensure unique replacement spots for each needed char
+      const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i; 
       if (replacementIndex >= 0 && replacementIndex < tempPasswordArray.length) {
          tempPasswordArray[replacementIndex] = charToAdd;
       }
-      // If replacementIndex is out of bounds (e.g., too many complexity chars needed for short password)
-      // this specific complexity char might not be added. This is an edge case.
     }
   }
-  password = tempPasswordArray.join('');
+  let passwordAfterComplexity = tempPasswordArray.join('');
   
   // Pad if necessary
-  let paddingLoopIndex = 0;
-  tempPasswordArray = password.split(''); // Re-split after complexity adjustments
-  while (tempPasswordArray.length < PASSWORD_MIN_LENGTH) {
-    tempPasswordArray.push(PADDING_CHARS.charAt(paddingLoopIndex % PADDING_CHARS.length));
-    paddingLoopIndex++;
-  }
-  password = tempPasswordArray.join('');
+  let finalPasswordArray = passwordAfterComplexity.split('');
+  const sourceForPadding = rawPasswordChars.join(''); // Use the original interleaved user input for padding
 
-  // Final truncation if it somehow exceeded max length (e.g. from padding after complexity made it long)
-  if (password.length > PASSWORD_MAX_LENGTH) {
-    password = password.substring(0, PASSWORD_MAX_LENGTH);
+  if (finalPasswordArray.length < PASSWORD_MIN_LENGTH) {
+    if (sourceForPadding.length > 0) {
+      let paddingIndex = 0;
+      while (finalPasswordArray.length < PASSWORD_MIN_LENGTH) {
+        finalPasswordArray.push(sourceForPadding.charAt(paddingIndex % sourceForPadding.length));
+        paddingIndex++;
+      }
+    } else {
+      // If sourceForPadding is empty (e.g., all inputs were empty)
+      // and we still need to pad (e.g. complexity chars didn't make it long enough or were zero).
+      // Use a very simple, fixed, deterministic padding sequence.
+      const defaultPaddingChars = "FkSec#01"; // A fixed string
+      let paddingIndex = 0;
+      while (finalPasswordArray.length < PASSWORD_MIN_LENGTH) {
+        finalPasswordArray.push(defaultPaddingChars.charAt(paddingIndex % defaultPaddingChars.length));
+        paddingIndex++;
+      }
+    }
   }
   
-  return password;
+  let finalPassword = finalPasswordArray.join('');
+
+  // Final truncation if it somehow exceeded max length (e.g. from padding after complexity made it long)
+  if (finalPassword.length > PASSWORD_MAX_LENGTH) {
+    finalPassword = finalPassword.substring(0, PASSWORD_MAX_LENGTH);
+  }
+  
+  return finalPassword;
 }
 
 export default function HomePage() {
@@ -121,15 +135,13 @@ export default function HomePage() {
   const [newPresetName, setNewPresetName] = useState('');
 
   useEffect(() => {
-    // This effect runs when the component mounts or when `toast` changes.
-    // It's intended to load fields if they were set by the Presets page.
     const fieldsToLoadJSON = localStorage.getItem(TEMP_FIELDS_STORAGE_KEY);
     if (fieldsToLoadJSON) {
       try {
         const presetFields: PresetFieldDefinition[] = JSON.parse(fieldsToLoadJSON);
         const newFields: FieldDefinition[] = presetFields.map(pf => ({
           ...pf,
-          value: '', // Values are not stored in presets
+          value: '', 
         }));
         setFields(newFields);
         toast({
@@ -143,7 +155,7 @@ export default function HomePage() {
         localStorage.removeItem(TEMP_FIELDS_STORAGE_KEY);
       }
     }
-  }, [toast]); // toast dependency is okay here
+  }, [toast]);
 
 
   const handleAddField = () => {
@@ -174,7 +186,7 @@ export default function HomePage() {
     }
   };
   
-  const handleGeneratePassword = () => { 
+  const handleGeneratePasswordInternal = () => { 
     setError(null);
     const includedFieldsWithValue = fields.filter(field => field.included && field.value.trim() !== '');
     
@@ -194,16 +206,10 @@ export default function HomePage() {
             description: 'Please provide values for your included fields.',
             variant: 'destructive',
         });
-      } else if (!anyFieldsIncluded && !anyFieldsHaveValue) { // Both no included and no values
+      } else { // Covers both no included & no values, or other edge cases
         toast({
             title: 'No inputs for password',
-            description: 'Please add values to your fields and ensure they are included.',
-            variant: 'destructive',
-        });
-      } else { // This case should ideally be caught by the specific ones above
-         toast({
-            title: 'Included fields are effectively empty',
-            description: 'Please ensure your included fields have non-whitespace values.',
+            description: 'Please add values to your fields and ensure they are included and not empty.',
             variant: 'destructive',
         });
       }
@@ -216,14 +222,12 @@ export default function HomePage() {
     setIsLoading(true); 
     setGeneratedPassword(''); 
 
-    // Simulate a slight delay for local generation to give feedback
     try {
-      setTimeout(() => { // Using setTimeout to ensure UI updates before potential blocking work
+      setTimeout(() => { 
         const newPassword = generateLocalPassword(fieldValuesInOrder);
         if (newPassword) {
           setGeneratedPassword(newPassword);
         } else {
-          // This else block might be redundant if generateLocalPassword always returns something or empty string
           setError("Could not generate a password. Try different inputs.");
           toast({
             title: 'Password Generation Failed',
@@ -232,8 +236,8 @@ export default function HomePage() {
           });
         }
         setIsLoading(false);
-      }, 50); // Small delay
-    } catch (err) { // Catch unexpected errors in generateLocalPassword
+      }, 50); 
+    } catch (err) { 
       console.error("Error generating password:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to generate password: ${errorMessage}`);
@@ -246,16 +250,15 @@ export default function HomePage() {
     }
   };
 
-   // Effect to auto-generate password when fields change
    useEffect(() => {
     const hasIncludedInputsWithValue = fields.some(f => f.included && f.value.trim() !== '');
     if (hasIncludedInputsWithValue) {
-      handleGeneratePassword();
+      handleGeneratePasswordInternal();
     } else {
-      setGeneratedPassword(''); // Clear password if no valid inputs
+      setGeneratedPassword(''); 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields]); // This dependency array is correct as we want to regen on any field change.
+  }, [fields]); 
 
   const handleConfirmSavePreset = () => {
     if (!newPresetName.trim()) {
@@ -384,7 +387,7 @@ export default function HomePage() {
           </div>
         </CardContent>
         <CardFooter>
-           <Button onClick={handleGeneratePassword} disabled={isLoading || !fields.some(f => f.included && f.value.trim() !== '')} size="lg" className="w-full md:w-auto">
+           <Button onClick={handleGeneratePasswordInternal} disabled={isLoading || !fields.some(f => f.included && f.value.trim() !== '')} size="lg" className="w-full md:w-auto">
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -399,3 +402,4 @@ export default function HomePage() {
     </div>
   );
 }
+
