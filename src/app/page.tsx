@@ -21,104 +21,150 @@ import { PRESETS_STORAGE_KEY, TEMP_FIELDS_STORAGE_KEY } from '@/lib/constants';
 const MAX_FIELDS = 10;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 16;
-// PADDING_CHARS is removed as padding will now use user's input or a fixed short sequence.
-const COMPLEXITY_CHARS = {
+const DEFAULT_COMPLEXITY_FALLBACKS = {
   uppercase: 'A',
   lowercase: 'z',
   number: '1',
   special: '!',
 };
+// Simple, deterministic leetspeak map
+const LEET_MAP: { [key: string]: string } = {
+  'o': '0', 'O': '0',
+  'l': '1', 'I': '1',
+  'e': '3', 'E': '3',
+  'a': '4', 'A': '4',
+  's': '5', 'S': '5',
+  't': '7', 'T': '7',
+  'b': '8', 'B': '8',
+  'g': '9', 'G': '9', // Can also be '6' for 'G'
+};
+
 
 function generateLocalPassword(fieldValues: string[]): string {
   if (fieldValues.length === 0) {
     return '';
   }
 
-  let rawPasswordChars: string[] = [];
+  // 1. Interleave inputs to form the base
+  let interleavedChars: string[] = [];
   let charIndex = 0;
-  // Interleave characters from each field value
-  while (rawPasswordChars.length < PASSWORD_MAX_LENGTH && charIndex < 100) { // charIndex < 100 as a safeguard
+  while (interleavedChars.length < PASSWORD_MAX_LENGTH && charIndex < 100) { // Safeguard charIndex
     let charAddedInThisPass = false;
     for (const value of fieldValues) {
       if (charIndex < value.length) {
-        if (rawPasswordChars.length < PASSWORD_MAX_LENGTH) {
-          rawPasswordChars.push(value[charIndex]);
+        if (interleavedChars.length < PASSWORD_MAX_LENGTH) {
+          interleavedChars.push(value[charIndex]);
           charAddedInThisPass = true;
         } else {
-          break; // Max password length reached
+          break; 
         }
       }
     }
-    if (!charAddedInThisPass && rawPasswordChars.length > 0) { // Stop if no more chars can be added from any field
-      break;
-    }
-    if (rawPasswordChars.length >= PASSWORD_MAX_LENGTH) break;
+    if (!charAddedInThisPass && interleavedChars.length > 0) break;
+    if (interleavedChars.length >= PASSWORD_MAX_LENGTH) break;
     charIndex++;
   }
-  
-  let passwordAfterInterleaving = rawPasswordChars.join('');
-  let tempPasswordArray = passwordAfterInterleaving.split('');
+  let tempPasswordArray = interleavedChars; // Work with this array
 
-  // Ensure complexity
-  let hasUppercase = /[A-Z]/.test(passwordAfterInterleaving);
-  let hasLowercase = /[a-z]/.test(passwordAfterInterleaving);
-  let hasNumber = /\d/.test(passwordAfterInterleaving);
-  let hasSpecial = /[^A-Za-z0-9]/.test(passwordAfterInterleaving);
+  // Full character pool from user inputs for transformations/padding checks
+  const characterPool = fieldValues.join('');
 
-  const neededComplexityChars: string[] = [];
-  if (!hasUppercase) neededComplexityChars.push(COMPLEXITY_CHARS.uppercase);
-  if (!hasLowercase) neededComplexityChars.push(COMPLEXITY_CHARS.lowercase);
-  if (!hasNumber) neededComplexityChars.push(COMPLEXITY_CHARS.number);
-  if (!hasSpecial) neededComplexityChars.push(COMPLEXITY_CHARS.special);
+  // 2. Complexity Pass (Transform First, then Default Fallback)
+  let needsUppercase = !tempPasswordArray.some(char => /[A-Z]/.test(char));
+  let needsLowercase = !tempPasswordArray.some(char => /[a-z]/.test(char));
+  let needsNumber = !tempPasswordArray.some(char => /\d/.test(char));
+  let needsSpecial = !tempPasswordArray.some(char => /[^A-Za-z0-9]/.test(char));
+
+  // Attempt Transformations
+  if (needsUppercase) {
+    for (let i = 0; i < tempPasswordArray.length; i++) {
+      if (/[a-z]/.test(tempPasswordArray[i])) {
+        tempPasswordArray[i] = tempPasswordArray[i].toUpperCase();
+        needsUppercase = false;
+        break;
+      }
+    }
+  }
+  if (needsLowercase) {
+    for (let i = 0; i < tempPasswordArray.length; i++) {
+      if (/[A-Z]/.test(tempPasswordArray[i])) {
+        tempPasswordArray[i] = tempPasswordArray[i].toLowerCase();
+        needsLowercase = false;
+        break;
+      }
+    }
+  }
+  if (needsNumber) {
+    for (let i = 0; i < tempPasswordArray.length; i++) {
+      if (LEET_MAP[tempPasswordArray[i].toLowerCase()]) { // Check lowercase for broader match
+        tempPasswordArray[i] = LEET_MAP[tempPasswordArray[i].toLowerCase()];
+        needsNumber = false;
+        break;
+      }
+    }
+  }
+  if (needsSpecial) {
+    let specialCharFromPool = '';
+    for (const char of characterPool) {
+      if (/[^A-Za-z0-9]/.test(char)) {
+        specialCharFromPool = char;
+        break;
+      }
+    }
+    if (specialCharFromPool) {
+      if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
+        tempPasswordArray.push(specialCharFromPool);
+      } else if (tempPasswordArray.length > 0) { // Replace last if at max length
+        tempPasswordArray[tempPasswordArray.length - 1] = specialCharFromPool;
+      }
+      needsSpecial = false;
+    }
+  }
+
+  // Fallback to Default Complexity Characters if still needed
+  const fallbacksToAdd: string[] = [];
+  if (needsUppercase) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.uppercase);
+  if (needsLowercase) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.lowercase);
+  if (needsNumber) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.number);
+  if (needsSpecial) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.special);
   
-  // Add or replace characters to meet complexity
-  for (let i = 0; i < neededComplexityChars.length; i++) {
-    const charToAdd = neededComplexityChars[i];
+  for (let i = 0; i < fallbacksToAdd.length; i++) {
+    const charToAdd = fallbacksToAdd[i];
     if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
       tempPasswordArray.push(charToAdd);
-    } else {
-      // Replace characters from the end if password is at max length
-      const replacementIndex = PASSWORD_MAX_LENGTH - 1 - i; 
-      if (replacementIndex >= 0 && replacementIndex < tempPasswordArray.length) {
-         tempPasswordArray[replacementIndex] = charToAdd;
-      }
-    }
-  }
-  let passwordAfterComplexity = tempPasswordArray.join('');
-  
-  // Pad if necessary
-  let finalPasswordArray = passwordAfterComplexity.split('');
-  const sourceForPadding = rawPasswordChars.join(''); // Use the original interleaved user input for padding
-
-  if (finalPasswordArray.length < PASSWORD_MIN_LENGTH) {
-    if (sourceForPadding.length > 0) {
-      let paddingIndex = 0;
-      while (finalPasswordArray.length < PASSWORD_MIN_LENGTH) {
-        finalPasswordArray.push(sourceForPadding.charAt(paddingIndex % sourceForPadding.length));
-        paddingIndex++;
-      }
-    } else {
-      // If sourceForPadding is empty (e.g., all inputs were empty)
-      // and we still need to pad (e.g. complexity chars didn't make it long enough or were zero).
-      // Use a very simple, fixed, deterministic padding sequence.
-      const defaultPaddingChars = "FkSec#01"; // A fixed string
-      let paddingIndex = 0;
-      while (finalPasswordArray.length < PASSWORD_MIN_LENGTH) {
-        finalPasswordArray.push(defaultPaddingChars.charAt(paddingIndex % defaultPaddingChars.length));
-        paddingIndex++;
-      }
+    } else if (tempPasswordArray.length > 0) {
+      // Replace from the end, ensuring not to replace what we just added/transformed if possible
+      // A simple strategy: replace characters starting from (length - fallbacks.length + current_fallback_idx)
+      // More robust: replace characters that are not part of an already met complexity type.
+      // For now, simple replacement from end for remaining defaults.
+      const replacementIndex = Math.max(0, tempPasswordArray.length - fallbacksToAdd.length + i);
+      tempPasswordArray[replacementIndex] = charToAdd;
     }
   }
   
-  let finalPassword = finalPasswordArray.join('');
+  let currentPassword = tempPasswordArray.join('');
 
-  // Final truncation if it somehow exceeded max length (e.g. from padding after complexity made it long)
-  if (finalPassword.length > PASSWORD_MAX_LENGTH) {
-    finalPassword = finalPassword.substring(0, PASSWORD_MAX_LENGTH);
+  // 3. Length Management (Padding)
+  if (currentPassword.length < PASSWORD_MIN_LENGTH) {
+    let paddingSource = interleavedChars.join(''); // Use the user's interleaved data for padding
+    if (paddingSource.length === 0) { 
+      paddingSource = "FkSec#01"; // Fallback if user inputs were all empty
+    }
+    let currentPaddingIndex = 0;
+    while (currentPassword.length < PASSWORD_MIN_LENGTH) {
+      currentPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
+      currentPaddingIndex++;
+    }
+  }
+
+  // 4. Final Truncation (should be rare if logic is tight)
+  if (currentPassword.length > PASSWORD_MAX_LENGTH) {
+    currentPassword = currentPassword.substring(0, PASSWORD_MAX_LENGTH);
   }
   
-  return finalPassword;
+  return currentPassword;
 }
+
 
 export default function HomePage() {
   const [fields, setFields] = useState<FieldDefinition[]>([
@@ -206,7 +252,7 @@ export default function HomePage() {
             description: 'Please provide values for your included fields.',
             variant: 'destructive',
         });
-      } else { // Covers both no included & no values, or other edge cases
+      } else { 
         toast({
             title: 'No inputs for password',
             description: 'Please add values to your fields and ensure they are included and not empty.',
@@ -223,6 +269,7 @@ export default function HomePage() {
     setGeneratedPassword(''); 
 
     try {
+      // Simulate a short delay for visual feedback, can be removed if not desired
       setTimeout(() => { 
         const newPassword = generateLocalPassword(fieldValuesInOrder);
         if (newPassword) {
@@ -402,4 +449,3 @@ export default function HomePage() {
     </div>
   );
 }
-
