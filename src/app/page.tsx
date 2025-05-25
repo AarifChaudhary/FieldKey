@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PRESETS_STORAGE_KEY, TEMP_FIELDS_STORAGE_KEY } from '@/lib/constants';
 
 const MAX_FIELDS = 10;
@@ -27,6 +28,159 @@ const DEFAULT_COMPLEXITY_FALLBACKS = {
   number: '1',
   special: '!',
 };
+
+// --- Helper for Smart Generation ---
+const simpleHash = (str: string): number => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
+};
+
+const capitalize = (s: string | undefined): string => {
+    if (!s) return '';
+    return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+const applyLeetSpeak = (str: string | undefined, seedStr: string): string => {
+  if (!str || str.length < 1) return str || '';
+  const leetMap: {[key: string]: string} = { 'a': '4', 'e': '3', 'o': '0', 'i': '1', 's': '5', 'l': '7', 't': '+' };
+  const chars = str.split('');
+  const seed = simpleHash(seedStr);
+  
+  // Deterministically find a character to 'leet' if present
+  const availableLeetChars = (Object.keys(leetMap) as (keyof typeof leetMap)[])
+    .filter(key => str.toLowerCase().includes(key));
+
+  if (availableLeetChars.length > 0) {
+    const charToLeet = availableLeetChars[seed % availableLeetChars.length];
+    let replaced = false;
+    // Try to replace a character at a deterministic index if possible
+    const potentialIdx = seed % str.length;
+    if (str[potentialIdx].toLowerCase() === charToLeet) {
+        chars[potentialIdx] = leetMap[charToLeet];
+        replaced = true;
+    }
+    // Fallback to first occurrence if deterministic index didn't match
+    if (!replaced) {
+        const firstOccurrenceIdx = str.toLowerCase().indexOf(charToLeet);
+        if (firstOccurrenceIdx !== -1) {
+            chars[firstOccurrenceIdx] = leetMap[charToLeet];
+        }
+    }
+  }
+  return chars.join('');
+};
+// --- End Helper for Smart Generation ---
+
+function generateSmartPassword(fieldValues: string[]): string {
+  if (fieldValues.length === 0) return '';
+
+  const tokens: string[] = [];
+  fieldValues.forEach(val => {
+    val.split(/[ ,\-_/.@]+/) // Split by common delimiters including . and @
+       .forEach(word => {
+         if (word && word.length > 1) tokens.push(word); // Filter empty and very short tokens
+       });
+  });
+
+  if (tokens.length === 0) {
+    // Fallback if no usable tokens: Use a modified version of normal generation
+    return generateLocalPassword(fieldValues.map(fv => fv.substring(0,5))); // Use prefixes
+  }
+
+  const baseSeed = fieldValues.join('|');
+  const getDeterministicValue = <T>(arr: T[], seedPart: string): T | undefined => {
+    if (arr.length === 0) return undefined;
+    return arr[simpleHash(baseSeed + seedPart) % arr.length];
+  };
+
+  let word1 = getDeterministicValue(tokens, "w1");
+  let word2 = getDeterministicValue(tokens.filter(t => t !== word1), "w2") || word1;
+  let word3 = getDeterministicValue(tokens.filter(t => t !== word1 && t !== word2), "w3") || word2;
+  
+  const numericTokens = tokens.filter(t => /^\d+$/.test(t));
+  let numPart = numericTokens.length > 0 ? getDeterministicValue(numericTokens, "n1") : (simpleHash(baseSeed + "n_fallback") % 90 + 10).toString();
+  if (numPart && numPart.length > 3) numPart = numPart.substring(0,3); // Cap numeric part length
+
+  const comp1 = capitalize(word1);
+  const comp2 = applyLeetSpeak(word2, baseSeed + "leet2");
+  const comp3 = word3 ? word3.split('').reverse().join('') : "";
+
+  const symbols = ['@', '#', '$', '&', '*', '-', '_', '+', '%', '^'];
+  const sym1 = getDeterministicValue(symbols, "s1") || '@';
+  const sym2 = getDeterministicValue(symbols.filter(s => s !== sym1), "s2") || '#';
+  const sym3 = getDeterministicValue(symbols.filter(s => s !== sym1 && s !== sym2), "s3") || '$';
+
+  const parts: (string | undefined)[] = [];
+  parts.push(comp1);
+  parts.push(sym1);
+  parts.push(numPart);
+  
+  if (comp2 && comp2.length > 0) {
+    parts.push(sym2);
+    parts.push(comp2);
+  }
+  
+  if (comp3 && comp3.length > 0 && tokens.length > 2) {
+    parts.push(sym3);
+    parts.push(comp3);
+  }
+  
+  let generatedPassword = parts.filter(p => p && p.length > 0).join('');
+  
+  // --- Finalization (Length and Complexity) ---
+  if (generatedPassword.length > PASSWORD_MAX_LENGTH) {
+    generatedPassword = generatedPassword.substring(0, PASSWORD_MAX_LENGTH);
+  }
+
+  let tempPasswordArray = generatedPassword.split('');
+  const complexityNeeds = {
+    uppercase: !tempPasswordArray.some(char => /[A-Z]/.test(char)),
+    lowercase: !tempPasswordArray.some(char => /[a-z]/.test(char)),
+    number: !tempPasswordArray.some(char => /\d/.test(char)),
+    special: !tempPasswordArray.some(char => /[^A-Za-z0-9]/.test(char)),
+  };
+
+  const fallbacks = DEFAULT_COMPLEXITY_FALLBACKS;
+  let fallbackKeys = Object.keys(fallbacks) as (keyof typeof fallbacks)[];
+  
+  // Deterministic order for applying fallbacks if multiple needed
+  fallbackKeys.sort(); 
+
+  for (const key of fallbackKeys) {
+    if (complexityNeeds[key]) {
+      if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
+        tempPasswordArray.push(fallbacks[key]);
+      } else if (tempPasswordArray.length > 0) {
+        // Replace from end deterministically based on order of fallbackKeys
+        const replaceIdx = tempPasswordArray.length - 1 - (fallbackKeys.indexOf(key) % tempPasswordArray.length);
+        tempPasswordArray[Math.max(0, replaceIdx)] = fallbacks[key];
+      }
+    }
+  }
+  generatedPassword = tempPasswordArray.join('');
+
+  if (generatedPassword.length < PASSWORD_MIN_LENGTH) {
+    let paddingSource = baseSeed.replace(/[^a-zA-Z0-9!@#$%^&*()]/g, ''); // cleaner padding source
+    if (paddingSource.length === 0) paddingSource = "FieldKey01!";
+    let currentPaddingIndex = 0;
+    while (generatedPassword.length < PASSWORD_MIN_LENGTH) {
+      generatedPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
+      currentPaddingIndex++;
+    }
+  }
+
+  if (generatedPassword.length > PASSWORD_MAX_LENGTH) {
+    generatedPassword = generatedPassword.substring(0, PASSWORD_MAX_LENGTH);
+  }
+  
+  return generatedPassword;
+}
+
 
 function generateLocalPassword(fieldValues: string[]): string {
   if (fieldValues.length === 0) {
@@ -80,15 +234,14 @@ function generateLocalPassword(fieldValues: string[]): string {
   if (needsLowercase) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.lowercase, type: 'lowercase' });
   if (needsNumber) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.number, type: 'number' });
   if (needsSpecial) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.special, type: 'special' });
+  
+  fallbacksToApply.sort((a,b) => a.type.localeCompare(b.type)); // Deterministic order of application
 
-  // Apply fallbacks: append if space, otherwise replace from the end
   for (let i = 0; i < fallbacksToApply.length; i++) {
     const fallback = fallbacksToApply[i];
     if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
       tempPasswordArray.push(fallback.char);
     } else if (tempPasswordArray.length > 0) {
-      // Replace from the end, ensuring we don't go out of bounds
-      // and the replacement order is deterministic (e.g. last for uppercase, 2nd last for lowercase etc.)
       const replacementIndex = Math.max(0, tempPasswordArray.length - 1 - i);
       tempPasswordArray[replacementIndex] = fallback.char;
     }
@@ -98,7 +251,7 @@ function generateLocalPassword(fieldValues: string[]): string {
 
   // 4. Length Management (Padding)
   if (currentPassword.length < PASSWORD_MIN_LENGTH) {
-    let paddingSource = fieldValues.join(''); // Use original, non-processed values for padding pool
+    let paddingSource = fieldValues.join(''); 
     if (paddingSource.length === 0) { 
       paddingSource = "FkSec#01"; 
     }
@@ -127,6 +280,7 @@ export default function HomePage() {
   const [generatedPassword, setGeneratedPassword] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false); 
   const [error, setError] = useState<string | null>(null);
+  const [generationMode, setGenerationMode] = useState<'normal' | 'smart'>('normal');
   const { toast } = useToast();
   const router = useRouter();
 
@@ -224,14 +378,20 @@ export default function HomePage() {
     try {
       // Simulate a short delay for visual feedback, can be removed if not desired
       setTimeout(() => { 
-        const newPassword = generateLocalPassword(fieldValuesInOrder);
+        let newPassword = '';
+        if (generationMode === 'smart') {
+            newPassword = generateSmartPassword(fieldValuesInOrder);
+        } else {
+            newPassword = generateLocalPassword(fieldValuesInOrder);
+        }
+
         if (newPassword) {
           setGeneratedPassword(newPassword);
         } else {
-          setError("Could not generate a password. Try different inputs.");
+          setError("Could not generate a password. Try different inputs or modes.");
           toast({
             title: 'Password Generation Failed',
-            description: 'Could not generate a password with the given inputs. Please try modifying your field values.',
+            description: 'Could not generate a password with the given inputs. Please try modifying your field values or generation mode.',
             variant: 'destructive',
           });
         }
@@ -258,7 +418,7 @@ export default function HomePage() {
       setGeneratedPassword(''); 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields]); 
+  }, [fields, generationMode]); // Added generationMode to dependencies
 
   const handleConfirmSavePreset = () => {
     if (!newPresetName.trim()) {
@@ -305,6 +465,30 @@ export default function HomePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <div>
+            <h3 className="text-xl font-semibold mb-2">Generation Mode</h3>
+            <RadioGroup
+                defaultValue="normal"
+                value={generationMode}
+                onValueChange={(value: 'normal' | 'smart') => setGenerationMode(value)}
+                className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-4"
+            >
+                <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="normal" id="mode-normal" />
+                    <Label htmlFor="mode-normal" className="cursor-pointer">Normal Mode</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="smart" id="mode-smart" />
+                    <Label htmlFor="mode-smart" className="cursor-pointer">Smart Mode</Label>
+                </div>
+            </RadioGroup>
+            <p className="text-xs text-muted-foreground mb-4">
+                {generationMode === 'normal' 
+                    ? "Normal mode uses a direct transformation of your field values." 
+                    : "Smart mode analyzes your inputs to create a more complex, structured password."}
+            </p>
+          </div>
+
           <div>
             <h3 className="text-xl font-semibold mb-2">Your Fields</h3>
             <p className="text-sm text-muted-foreground mb-4">
@@ -402,6 +586,4 @@ export default function HomePage() {
     </div>
   );
 }
-    
-
     
