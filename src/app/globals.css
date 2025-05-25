@@ -23,8 +23,8 @@
     --muted: 220 10% 90%;
     --muted-foreground: 240 5% 35%; /* Softer dark gray */
     
-    --accent: 207 88% 68%; /* Soft Blue #64b5f6 */
-    --accent-foreground: 240 10% 3.9%; /* Dark Gray */
+    --accent: 162 60% 55%; /* Softer, lighter teal for themed hover */
+    --accent-foreground: 0 0% 100%; /* White for contrast on new accent */
     
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
@@ -71,8 +71,8 @@
     --muted: 240 6% 15%;
     --muted-foreground: 220 10% 65%; /* Lighter gray */
     
-    --accent: 207 88% 68%; /* Soft Blue */
-    --accent-foreground: 240 10% 3.9%; /* Dark Gray text on soft blue for dark mode */
+    --accent: 162 60% 35%; /* Softer, darker teal for themed hover */
+    --accent-foreground: 0 0% 100%; /* White for contrast on new accent */
     
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
