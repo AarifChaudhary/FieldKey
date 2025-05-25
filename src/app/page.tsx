@@ -15,7 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'; // Added Tabs imports
 import { PRESETS_STORAGE_KEY, TEMP_FIELDS_STORAGE_KEY } from '@/lib/constants';
 
 const MAX_FIELDS = 10;
@@ -92,7 +92,7 @@ function generateSmartPassword(fieldValues: string[], targetLength: number): str
   if (targetLength === 8) {
     passArray.push(capitalize(baseWord1.slice(0, 3)));
     passArray.push(sym1);
-    passArray.push(numPart.slice(0,2)); // ensure 2 digits
+    passArray.push(numPart.slice(0,2)); 
     const remainingForW2 = Math.max(1, 8 - passArray.join('').length);
     passArray.push(baseWord2.slice(0, remainingForW2));
   } else if (targetLength === 16) {
@@ -100,7 +100,7 @@ function generateSmartPassword(fieldValues: string[], targetLength: number): str
     passArray.push(sym1);
     passArray.push(baseWord2.slice(0, 5));
     passArray.push(sym2);
-    passArray.push(numPart.slice(0,3)); // ensure 3 digits
+    passArray.push(numPart.slice(0,3)); 
     const currentLength = passArray.join('').length;
     if (currentLength < 16) {
       passArray.push(baseWord3.slice(0, 16 - currentLength));
@@ -110,7 +110,7 @@ function generateSmartPassword(fieldValues: string[], targetLength: number): str
     passArray.push(sym1);
     passArray.push(baseWord2.slice(0, 7));
     passArray.push(sym2);
-    passArray.push(numPart.slice(0,3)); // ensure 3 digits
+    passArray.push(numPart.slice(0,3)); 
     const currentLength = passArray.join('').length;
     if (currentLength < 20) {
       passArray.push(baseWord3.slice(0, 20 - currentLength));
@@ -119,7 +119,6 @@ function generateSmartPassword(fieldValues: string[], targetLength: number): str
 
   let generatedPassword = passArray.join('');
 
-  // Pad if too short (e.g. if input words were very short)
   if (generatedPassword.length < targetLength) {
     let paddingSource = (baseWord1 + baseWord2 + baseWord3).replace(/[^a-z]/gi, '');
     if (paddingSource.length === 0) paddingSource = "abcdefghij";
@@ -129,12 +128,10 @@ function generateSmartPassword(fieldValues: string[], targetLength: number): str
     }
   }
   
-  // Truncate if too long (should be rare with slicing, but good safeguard)
   if (generatedPassword.length > targetLength) {
     generatedPassword = generatedPassword.substring(0, targetLength);
   }
 
-  // Enforce Complexity (using adapted logic from normal mode)
   let tempPasswordArray = generatedPassword.split('');
   const needs = {
     uppercase: !tempPasswordArray.some(char => /[A-Z]/.test(char)),
@@ -152,7 +149,6 @@ function generateSmartPassword(fieldValues: string[], targetLength: number): str
       if (tempPasswordArray.length < targetLength) {
         tempPasswordArray.push(fallbacks[key]);
       } else if (tempPasswordArray.length > 0) {
-        // Replace from end, ensuring index is valid
         const idxToReplace = Math.max(0, tempPasswordArray.length - 1 - (replacementIdxCounter % tempPasswordArray.length));
         tempPasswordArray[idxToReplace] = fallbacks[key];
         replacementIdxCounter++;
@@ -161,11 +157,10 @@ function generateSmartPassword(fieldValues: string[], targetLength: number): str
   }
   generatedPassword = tempPasswordArray.join('');
   
-  // Final length check post-complexity
    if (generatedPassword.length > targetLength) {
     generatedPassword = generatedPassword.substring(0, targetLength);
   }
-  while (generatedPassword.length < targetLength) { // Should only happen if initial generated pass was empty AND fallbacks didn't fill
+  while (generatedPassword.length < targetLength) { 
      let paddingSource = (baseWord1 + baseWord2 + baseWord3).replace(/[^a-z]/gi, '');
      if (paddingSource.length === 0) paddingSource = "fallback";
      generatedPassword += paddingSource[simpleHash(baseSeed + "final_pad" + generatedPassword.length) % paddingSource.length];
@@ -192,7 +187,7 @@ function generateLocalPassword(fieldValues: string[], targetLength: number): str
   let interleavedChars: string[] = [];
   let charIndex = 0;
   let interleaveLoopGuard = 0;
-  const maxInterleaveLength = targetLength * 2; // Allow more initial chars for complexity phase
+  const maxInterleaveLength = targetLength * 2; 
 
   while (interleavedChars.length < maxInterleaveLength && interleaveLoopGuard < 100) {
     let charAddedInThisPass = false;
@@ -212,7 +207,7 @@ function generateLocalPassword(fieldValues: string[], targetLength: number): str
     interleaveLoopGuard++;
   }
   
-  let tempPasswordArray = interleavedChars.slice(0, targetLength); // Initial cut to target length
+  let tempPasswordArray = interleavedChars.slice(0, targetLength); 
 
   const needs = {
     uppercase: !tempPasswordArray.some(char => /[A-Z]/.test(char)),
@@ -329,7 +324,6 @@ export default function HomePage() {
     const includedFieldsWithValue = fields.filter(field => field.included && field.value.trim() !== '');
     
     if (includedFieldsWithValue.length === 0) {
-      // Consolidated toast logic
       toast({
           title: 'No inputs for password',
           description: 'Please add values to your fields, ensure they are included, and not empty.',
@@ -434,43 +428,38 @@ export default function HomePage() {
         </CardHeader>
         <CardContent className="space-y-6">
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
             <div>
-              <h3 className="text-lg font-semibold mb-2">Generation Mode</h3>
-              <RadioGroup
+              <Label className="text-lg font-semibold mb-2 block">Generation Mode</Label>
+              <Tabs
                   value={generationMode}
-                  onValueChange={(value: 'normal' | 'smart') => setGenerationMode(value)}
-                  className="flex flex-col sm:flex-row gap-2 sm:gap-4"
+                  onValueChange={(value) => setGenerationMode(value as 'normal' | 'smart')}
+                  className="w-full"
               >
-                  <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="normal" id="mode-normal" />
-                      <Label htmlFor="mode-normal" className="cursor-pointer">Normal Mode</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="smart" id="mode-smart" />
-                      <Label htmlFor="mode-smart" className="cursor-pointer">Smart Mode</Label>
-                  </div>
-              </RadioGroup>
-              <p className="text-xs text-muted-foreground mt-1">
+                  <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="normal">Normal Mode</TabsTrigger>
+                      <TabsTrigger value="smart">Smart Mode</TabsTrigger>
+                  </TabsList>
+              </Tabs>
+              <p className="text-xs text-muted-foreground mt-2">
                   {generationMode === 'normal' 
                       ? "Normal mode uses a direct transformation of your field values." 
                       : "Smart mode creates a structured password using segments of your words, symbols, and numbers."}
               </p>
             </div>
             <div>
-              <h3 className="text-lg font-semibold mb-2">Password Length</h3>
-               <RadioGroup
+              <Label className="text-lg font-semibold mb-2 block">Password Length</Label>
+               <Tabs
                   value={selectedPasswordLength.toString()}
-                  onValueChange={(value: string) => setSelectedPasswordLength(parseInt(value, 10))}
-                  className="flex flex-col sm:flex-row gap-2 sm:gap-4"
+                  onValueChange={(value) => setSelectedPasswordLength(parseInt(value, 10))}
+                  className="w-full"
               >
-                  {AVAILABLE_PASSWORD_LENGTHS.map(len => (
-                    <div key={len} className="flex items-center space-x-2">
-                        <RadioGroupItem value={len.toString()} id={`len-${len}`} />
-                        <Label htmlFor={`len-${len}`} className="cursor-pointer">{len} Characters</Label>
-                    </div>
-                  ))}
-              </RadioGroup>
+                  <TabsList className="grid w-full grid-cols-3">
+                    {AVAILABLE_PASSWORD_LENGTHS.map(len => (
+                        <TabsTrigger key={len} value={len.toString()}>{len} Chars</TabsTrigger>
+                    ))}
+                  </TabsList>
+              </Tabs>
             </div>
           </div>
 
