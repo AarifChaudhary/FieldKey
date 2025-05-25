@@ -12,7 +12,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Separator } from '@/components/ui/separator';
 import { AlertCircle, Loader2, Save } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-// import { useRouter } from 'next/navigation'; // No longer used here, but kept in case of future routing needs from this page
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,8 +19,9 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PRESETS_STORAGE_KEY, TEMP_FIELDS_STORAGE_KEY } from '@/lib/constants';
 
 const MAX_FIELDS = 10;
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_MAX_LENGTH = 16;
+const DEFAULT_PASSWORD_LENGTH = 16;
+const AVAILABLE_PASSWORD_LENGTHS = [8, 16, 20];
+
 const DEFAULT_COMPLEXITY_FALLBACKS = {
   uppercase: 'A',
   lowercase: 'z',
@@ -29,143 +29,114 @@ const DEFAULT_COMPLEXITY_FALLBACKS = {
   special: '!',
 };
 
-// --- Helper for Smart Generation ---
 const simpleHash = (str: string): number => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32bit integer
+    hash |= 0; 
   }
   return Math.abs(hash);
 };
 
 const capitalize = (s: string | undefined): string => {
-    if (!s) return '';
-    return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); // Ensures rest is lowercase
+    if (!s || s.length === 0) return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const applyLeetSpeak = (str: string | undefined, seedStr: string): string => {
-  if (!str || str.length < 1) return str || '';
-  // Ensure input to leetspeak is lowercase for map consistency
-  const lcStr = str.toLowerCase();
-  const leetMap: {[key: string]: string} = { 'a': '4', 'e': '3', 'o': '0', 'i': '1', 's': '5', 'l': '7', 't': '+' };
-  const chars = lcStr.split('');
-  const seed = simpleHash(seedStr);
-  
-  const availableLeetChars = (Object.keys(leetMap) as (keyof typeof leetMap)[])
-    .filter(key => lcStr.includes(key));
-
-  if (availableLeetChars.length > 0) {
-    const charToLeet = availableLeetChars[seed % availableLeetChars.length];
-    let replaced = false;
-    const potentialIdx = seed % lcStr.length;
-    if (lcStr[potentialIdx] === charToLeet) {
-        chars[potentialIdx] = leetMap[charToLeet];
-        replaced = true;
-    }
-    if (!replaced) {
-        const firstOccurrenceIdx = lcStr.indexOf(charToLeet);
-        if (firstOccurrenceIdx !== -1) {
-            chars[firstOccurrenceIdx] = leetMap[charToLeet];
-        }
-    }
-  }
-  return chars.join('');
+const getDeterministicItem = <T>(arr: T[], seed: string, fallback?: T): T | undefined => {
+  if (!arr || arr.length === 0) return fallback;
+  return arr[simpleHash(seed) % arr.length];
 };
-// --- End Helper for Smart Generation ---
 
-function generateSmartPassword(fieldValues: string[]): string {
+
+function generateSmartPassword(fieldValues: string[], targetLength: number): string {
   if (fieldValues.length === 0) return '';
 
-  const tokens: string[] = [];
-  fieldValues.forEach(val => {
-    val.split(/[ ,\-_/.@]+/) 
-       .forEach(word => {
-         if (word && word.length > 1) tokens.push(word.toLowerCase()); // Convert to lowercase during tokenization
-       });
-  });
+  const baseSeed = fieldValues.join('|');
 
-  if (tokens.length === 0) {
-    return generateLocalPassword(fieldValues.map(fv => fv.substring(0,5))); 
-  }
+  const allTokens = fieldValues.flatMap(val => 
+    val.split(/[ ,\-_/.@]+/).filter(Boolean)
+  ).map(t => t.toLowerCase());
 
-  const baseSeed = fieldValues.join('|'); // Use original fieldValues for baseSeed
-  const getDeterministicValue = <T>(arr: T[], seedPart: string): T | undefined => {
-    if (arr.length === 0) return undefined;
-    return arr[simpleHash(baseSeed + seedPart) % arr.length];
-  };
+  const wordTokens = allTokens.filter(t => /^[a-z]+$/.test(t) && t.length >= 3);
+  const numericTokens = allTokens.filter(t => /^\d+$/.test(t));
 
-  const LONG_WORD_THRESHOLD = 6; 
-  const TARGET_SEGMENT_LENGTH = 4; 
-
-  const processToken = (token: string | undefined, seedSuffix: string): string => {
-    if (!token) return ''; // Token is already lowercase
-    if (token.length > LONG_WORD_THRESHOLD && token.length > TARGET_SEGMENT_LENGTH) {
-      const choice = simpleHash(baseSeed + token + seedSuffix + "segment_choice") % 3;
-      if (choice === 0) { // Prefix
-        return token.substring(0, TARGET_SEGMENT_LENGTH);
-      } else if (choice === 1) { // Suffix
-        return token.substring(token.length - TARGET_SEGMENT_LENGTH);
-      } else { // Middle
-        // Ensure start index allows for full TARGET_SEGMENT_LENGTH
-        const maxStart = token.length - TARGET_SEGMENT_LENGTH;
-        const start = simpleHash(baseSeed + token + seedSuffix + "mid_start") % (maxStart + 1);
-        return token.substring(start, start + TARGET_SEGMENT_LENGTH);
-      }
+  const symbols = ['#', '$', '@', '!', '.', '-'];
+  const sym1 = getDeterministicItem(symbols, baseSeed + "s1", '#')!;
+  const sym2 = getDeterministicItem(symbols.filter(s => s !== sym1), baseSeed + "s2", '$')!;
+  
+  let numPart = getDeterministicItem(numericTokens, baseSeed + "n", undefined);
+  if (!numPart) {
+    const numFallback = simpleHash(baseSeed + "numFall");
+    if (targetLength === 8) {
+      numPart = (numFallback % 90 + 10).toString(); // 10-99
+    } else {
+      numPart = (numFallback % 900 + 100).toString(); // 100-999
     }
-    return token; 
-  };
-
-  let token1Raw = getDeterministicValue(tokens, "w1_seed");
-  let token2Raw = getDeterministicValue(tokens.filter(t => t !== token1Raw), "w2_seed") || token1Raw;
-  let token3Raw = getDeterministicValue(tokens.filter(t => t !== token1Raw && t !== token2Raw), "w3_seed") || token2Raw;
-
-  const segment1 = processToken(token1Raw, "seg1_proc");
-  const segment2 = processToken(token2Raw, "seg2_proc");
-  const segment3 = processToken(token3Raw, "seg3_proc");
-  
-  const comp1 = capitalize(segment1); // segment1 is lowercase
-  const comp2 = applyLeetSpeak(segment2, baseSeed + "leet_seg2"); // segment2 is lowercase
-
-  let comp3 = "";
-  if (segment3 && segment3.length > 0 && segment3 !== segment1 && segment3 !== segment2) {
-    comp3 = segment3.split('').reverse().join(''); // segment3 is lowercase
+  } else {
+     if (targetLength === 8) {
+      numPart = numPart.slice(0, 2);
+    } else {
+      numPart = numPart.slice(0, 3);
+    }
   }
 
-  const numericTokens = tokens.filter(t => /^\d+$/.test(t)); // These tokens are already lowercase, but numbers are fine
-  let numPart = numericTokens.length > 0 ? getDeterministicValue(numericTokens, "n1_select") : (simpleHash(baseSeed + "n_fallback") % 90 + 10).toString();
-  if (numPart && numPart.length > 3) numPart = numPart.substring(0,3);
 
-  const symbols = ['@', '#', '$', '&', '*', '-', '_', '+', '%', '^'];
-  const sym1 = getDeterministicValue(symbols, "sym1_select") || '@';
-  const sym2 = getDeterministicValue(symbols.filter(s => s !== sym1), "sym2_select") || '#';
-  const sym3 = getDeterministicValue(symbols.filter(s => s !== sym1 && s !== sym2), "sym3_select") || '$';
+  const baseWord1 = getDeterministicItem(wordTokens, baseSeed + "w1", "field")!;
+  const baseWord2 = getDeterministicItem(wordTokens.filter(t => t !== baseWord1), baseSeed + "w2", "key")!;
+  const baseWord3 = getDeterministicItem(wordTokens.filter(t => t !== baseWord1 && t !== baseWord2), baseSeed + "w3", "pass")!;
 
-  const parts: (string | undefined)[] = [];
-  if (comp1 && comp1.length > 0) parts.push(comp1);
-  parts.push(sym1);
-  if (numPart && numPart.length > 0) parts.push(numPart);
-  
-  if (comp2 && comp2.length > 0 && (segment2 && segment1 && segment2 !== segment1)) { 
-    parts.push(sym2);
-    parts.push(comp2);
+  const passArray: string[] = [];
+
+  if (targetLength === 8) {
+    passArray.push(capitalize(baseWord1.slice(0, 3)));
+    passArray.push(sym1);
+    passArray.push(numPart.slice(0,2)); // ensure 2 digits
+    const remainingForW2 = Math.max(1, 8 - passArray.join('').length);
+    passArray.push(baseWord2.slice(0, remainingForW2));
+  } else if (targetLength === 16) {
+    passArray.push(capitalize(baseWord1.slice(0, 5)));
+    passArray.push(sym1);
+    passArray.push(baseWord2.slice(0, 5));
+    passArray.push(sym2);
+    passArray.push(numPart.slice(0,3)); // ensure 3 digits
+    const currentLength = passArray.join('').length;
+    if (currentLength < 16) {
+      passArray.push(baseWord3.slice(0, 16 - currentLength));
+    }
+  } else { // targetLength === 20
+    passArray.push(capitalize(baseWord1.slice(0, 7)));
+    passArray.push(sym1);
+    passArray.push(baseWord2.slice(0, 7));
+    passArray.push(sym2);
+    passArray.push(numPart.slice(0,3)); // ensure 3 digits
+    const currentLength = passArray.join('').length;
+    if (currentLength < 20) {
+      passArray.push(baseWord3.slice(0, 20 - currentLength));
+    }
+  }
+
+  let generatedPassword = passArray.join('');
+
+  // Pad if too short (e.g. if input words were very short)
+  if (generatedPassword.length < targetLength) {
+    let paddingSource = (baseWord1 + baseWord2 + baseWord3).replace(/[^a-z]/gi, '');
+    if (paddingSource.length === 0) paddingSource = "abcdefghij";
+    let currentPaddingIndex = 0;
+    while (generatedPassword.length < targetLength) {
+      generatedPassword += paddingSource[simpleHash(baseSeed + "pad_smart" + currentPaddingIndex++) % paddingSource.length];
+    }
   }
   
-  if (comp3 && comp3.length > 0) { // comp3 is already guaranteed to be from a distinct segment if non-empty
-    parts.push(sym3);
-    parts.push(comp3);
-  }
-  
-  let generatedPassword = parts.filter(p => p && p.length > 0).join('');
-  
-  // --- Finalization (Length and Complexity) ---
-  if (generatedPassword.length > PASSWORD_MAX_LENGTH) {
-    generatedPassword = generatedPassword.substring(0, PASSWORD_MAX_LENGTH);
+  // Truncate if too long (should be rare with slicing, but good safeguard)
+  if (generatedPassword.length > targetLength) {
+    generatedPassword = generatedPassword.substring(0, targetLength);
   }
 
+  // Enforce Complexity (using adapted logic from normal mode)
   let tempPasswordArray = generatedPassword.split('');
-  const complexityNeeds = {
+  const needs = {
     uppercase: !tempPasswordArray.some(char => /[A-Z]/.test(char)),
     lowercase: !tempPasswordArray.some(char => /[a-z]/.test(char)),
     number: !tempPasswordArray.some(char => /\d/.test(char)),
@@ -173,50 +144,44 @@ function generateSmartPassword(fieldValues: string[]): string {
   };
 
   const fallbacks = DEFAULT_COMPLEXITY_FALLBACKS;
-  let fallbackKeys = Object.keys(fallbacks) as (keyof typeof fallbacks)[];
-  
-  fallbackKeys.sort(); 
+  const fallbackKeys = Object.keys(fallbacks).sort() as (keyof typeof fallbacks)[];
+  let replacementIdxCounter = 0;
 
   for (const key of fallbackKeys) {
-    if (complexityNeeds[key]) {
-      if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
+    if (needs[key]) {
+      if (tempPasswordArray.length < targetLength) {
         tempPasswordArray.push(fallbacks[key]);
       } else if (tempPasswordArray.length > 0) {
-        const replaceIdx = tempPasswordArray.length - 1 - (fallbackKeys.indexOf(key) % tempPasswordArray.length);
-        tempPasswordArray[Math.max(0, replaceIdx)] = fallbacks[key];
+        // Replace from end, ensuring index is valid
+        const idxToReplace = Math.max(0, tempPasswordArray.length - 1 - (replacementIdxCounter % tempPasswordArray.length));
+        tempPasswordArray[idxToReplace] = fallbacks[key];
+        replacementIdxCounter++;
       }
     }
   }
   generatedPassword = tempPasswordArray.join('');
-
-  if (generatedPassword.length < PASSWORD_MIN_LENGTH) {
-    let paddingSource = baseSeed.replace(/[^a-zA-Z0-9!@#$%^&*()]/g, ''); 
-    if (paddingSource.length === 0) paddingSource = "FieldKey01!";
-    let currentPaddingIndex = 0;
-    while (generatedPassword.length < PASSWORD_MIN_LENGTH) {
-      generatedPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
-      currentPaddingIndex++;
-    }
-  }
-
-  if (generatedPassword.length > PASSWORD_MAX_LENGTH) {
-    generatedPassword = generatedPassword.substring(0, PASSWORD_MAX_LENGTH);
-  }
   
+  // Final length check post-complexity
+   if (generatedPassword.length > targetLength) {
+    generatedPassword = generatedPassword.substring(0, targetLength);
+  }
+  while (generatedPassword.length < targetLength) { // Should only happen if initial generated pass was empty AND fallbacks didn't fill
+     let paddingSource = (baseWord1 + baseWord2 + baseWord3).replace(/[^a-z]/gi, '');
+     if (paddingSource.length === 0) paddingSource = "fallback";
+     generatedPassword += paddingSource[simpleHash(baseSeed + "final_pad" + generatedPassword.length) % paddingSource.length];
+  }
+
   return generatedPassword;
 }
 
 
-function generateLocalPassword(fieldValues: string[]): string {
+function generateLocalPassword(fieldValues: string[], targetLength: number): string {
   if (fieldValues.length === 0) {
     return '';
   }
 
-  // 1. Process Each Field
   const processedFieldValues = fieldValues.map(val => {
-    if (val.length <= 1) {
-      return val;
-    }
+    if (val.length <= 1) return val;
     const firstChar = val[0];
     const lastChar = val[val.length - 1];
     const middlePart = val.substring(1, val.length - 1);
@@ -224,15 +189,16 @@ function generateLocalPassword(fieldValues: string[]): string {
     return firstChar + reversedMiddle + lastChar;
   });
 
-  // 2. Interleave Processed Values
   let interleavedChars: string[] = [];
   let charIndex = 0;
-  let interleaveLoopGuard = 0; 
-  while (interleavedChars.length < PASSWORD_MAX_LENGTH && interleaveLoopGuard < 100) {
+  let interleaveLoopGuard = 0;
+  const maxInterleaveLength = targetLength * 2; // Allow more initial chars for complexity phase
+
+  while (interleavedChars.length < maxInterleaveLength && interleaveLoopGuard < 100) {
     let charAddedInThisPass = false;
     for (const value of processedFieldValues) {
       if (charIndex < value.length) {
-        if (interleavedChars.length < PASSWORD_MAX_LENGTH) {
+        if (interleavedChars.length < maxInterleaveLength) {
           interleavedChars.push(value[charIndex]);
           charAddedInThisPass = true;
         } else {
@@ -241,56 +207,50 @@ function generateLocalPassword(fieldValues: string[]): string {
       }
     }
     if (!charAddedInThisPass && interleavedChars.length > 0) break;
-    if (interleavedChars.length >= PASSWORD_MAX_LENGTH) break;
+    if (interleavedChars.length >= maxInterleaveLength) break;
     charIndex++;
     interleaveLoopGuard++;
   }
   
-  let tempPasswordArray = [...interleavedChars];
+  let tempPasswordArray = interleavedChars.slice(0, targetLength); // Initial cut to target length
 
-  // 3. Enforce Complexity (Using Defaults)
-  let needsUppercase = !tempPasswordArray.some(char => /[A-Z]/.test(char));
-  let needsLowercase = !tempPasswordArray.some(char => /[a-z]/.test(char));
-  let needsNumber = !tempPasswordArray.some(char => /\d/.test(char));
-  let needsSpecial = !tempPasswordArray.some(char => /[^A-Za-z0-9]/.test(char));
-
-  const fallbacksToApply: { char: string, type: keyof typeof DEFAULT_COMPLEXITY_FALLBACKS }[] = [];
-  if (needsUppercase) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.uppercase, type: 'uppercase' });
-  if (needsLowercase) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.lowercase, type: 'lowercase' });
-  if (needsNumber) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.number, type: 'number' });
-  if (needsSpecial) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.special, type: 'special' });
+  const needs = {
+    uppercase: !tempPasswordArray.some(char => /[A-Z]/.test(char)),
+    lowercase: !tempPasswordArray.some(char => /[a-z]/.test(char)),
+    number: !tempPasswordArray.some(char => /\d/.test(char)),
+    special: !tempPasswordArray.some(char => /[^A-Za-z0-9]/.test(char)),
+  };
   
-  fallbacksToApply.sort((a,b) => a.type.localeCompare(b.type)); 
+  const fallbacks = DEFAULT_COMPLEXITY_FALLBACKS;
+  const fallbackKeys = Object.keys(fallbacks).sort() as (keyof typeof fallbacks)[];
+  let replacementIdxCounter = 0;
 
-  for (let i = 0; i < fallbacksToApply.length; i++) {
-    const fallback = fallbacksToApply[i];
-    if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
-      tempPasswordArray.push(fallback.char);
-    } else if (tempPasswordArray.length > 0) {
-      const replacementIndex = Math.max(0, tempPasswordArray.length - 1 - i);
-      tempPasswordArray[replacementIndex] = fallback.char;
+  for (const key of fallbackKeys) {
+    if (needs[key]) {
+      if (tempPasswordArray.length < targetLength) {
+        tempPasswordArray.push(fallbacks[key]);
+      } else if (tempPasswordArray.length > 0) {
+         const idxToReplace = Math.max(0, tempPasswordArray.length - 1 - (replacementIdxCounter % tempPasswordArray.length));
+         tempPasswordArray[idxToReplace] = fallbacks[key];
+         replacementIdxCounter++;
+      }
     }
   }
   
   let currentPassword = tempPasswordArray.join('');
 
-  // 4. Length Management (Padding)
-  if (currentPassword.length < PASSWORD_MIN_LENGTH) {
-    let paddingSource = fieldValues.join(''); 
-    if (paddingSource.length === 0) { 
-      paddingSource = "FkSec#01"; 
-    }
+  if (currentPassword.length < targetLength) {
+    let paddingSource = fieldValues.join('').replace(/[^a-zA-Z0-9!@#$%^&*()]/g, ''); 
+    if (paddingSource.length === 0) paddingSource = "FkSec#01"; 
     
     let currentPaddingIndex = 0;
-    while (currentPassword.length < PASSWORD_MIN_LENGTH) {
-      currentPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
-      currentPaddingIndex++;
+    while (currentPassword.length < targetLength) {
+      currentPassword += paddingSource[simpleHash(fieldValues.join('|') + "pad_local" + currentPaddingIndex++) % paddingSource.length];
     }
   }
 
-  // 5. Final Truncation
-  if (currentPassword.length > PASSWORD_MAX_LENGTH) {
-    currentPassword = currentPassword.substring(0, PASSWORD_MAX_LENGTH);
+  if (currentPassword.length > targetLength) {
+    currentPassword = currentPassword.substring(0, targetLength);
   }
   
   return currentPassword;
@@ -306,8 +266,8 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState<boolean>(false); 
   const [error, setError] = useState<string | null>(null);
   const [generationMode, setGenerationMode] = useState<'normal' | 'smart'>('normal');
+  const [selectedPasswordLength, setSelectedPasswordLength] = useState<number>(DEFAULT_PASSWORD_LENGTH);
   const { toast } = useToast();
-  // const router = useRouter(); // No longer used
 
   const [isSavePresetModalOpen, setSavePresetModalOpen] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
@@ -369,28 +329,12 @@ export default function HomePage() {
     const includedFieldsWithValue = fields.filter(field => field.included && field.value.trim() !== '');
     
     if (includedFieldsWithValue.length === 0) {
-      const anyFieldsIncluded = fields.some(field => field.included);
-      const anyFieldsHaveValue = fields.some(field => field.value.trim() !== '');
-
-      if (!anyFieldsIncluded && anyFieldsHaveValue) {
-        toast({
-            title: 'No fields included',
-            description: 'Please mark some fields as "included" for password generation.',
-            variant: 'destructive',
-        });
-      } else if (anyFieldsIncluded && !anyFieldsHaveValue) {
-         toast({
-            title: 'Included fields are empty',
-            description: 'Please provide values for your included fields.',
-            variant: 'destructive',
-        });
-      } else { 
-        toast({
-            title: 'No inputs for password',
-            description: 'Please add values to your fields and ensure they are included and not empty.',
-            variant: 'destructive',
-        });
-      }
+      // Consolidated toast logic
+      toast({
+          title: 'No inputs for password',
+          description: 'Please add values to your fields, ensure they are included, and not empty.',
+          variant: 'destructive',
+      });
       setGeneratedPassword('');
       return;
     }
@@ -401,13 +345,12 @@ export default function HomePage() {
     setGeneratedPassword(''); 
 
     try {
-      // Simulate a short delay for visual feedback, can be removed if not desired
       setTimeout(() => { 
         let newPassword = '';
         if (generationMode === 'smart') {
-            newPassword = generateSmartPassword(fieldValuesInOrder);
+            newPassword = generateSmartPassword(fieldValuesInOrder, selectedPasswordLength);
         } else {
-            newPassword = generateLocalPassword(fieldValuesInOrder);
+            newPassword = generateLocalPassword(fieldValuesInOrder, selectedPasswordLength);
         }
 
         if (newPassword) {
@@ -416,7 +359,7 @@ export default function HomePage() {
           setError("Could not generate a password. Try different inputs or modes.");
           toast({
             title: 'Password Generation Failed',
-            description: 'Could not generate a password with the given inputs. Please try modifying your field values or generation mode.',
+            description: 'Could not generate a password. Please check inputs or try a different mode/length.',
             variant: 'destructive',
           });
         }
@@ -443,7 +386,7 @@ export default function HomePage() {
       setGeneratedPassword(''); 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, generationMode]); 
+  }, [fields, generationMode, selectedPasswordLength]); 
 
   const handleConfirmSavePreset = () => {
     if (!newPresetName.trim()) {
@@ -490,29 +433,47 @@ export default function HomePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <h3 className="text-xl font-semibold mb-2">Generation Mode</h3>
-            <RadioGroup
-                defaultValue="normal"
-                value={generationMode}
-                onValueChange={(value: 'normal' | 'smart') => setGenerationMode(value)}
-                className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-4"
-            >
-                <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="normal" id="mode-normal" />
-                    <Label htmlFor="mode-normal" className="cursor-pointer">Normal Mode</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="smart" id="mode-smart" />
-                    <Label htmlFor="mode-smart" className="cursor-pointer">Smart Mode</Label>
-                </div>
-            </RadioGroup>
-            <p className="text-xs text-muted-foreground mb-4">
-                {generationMode === 'normal' 
-                    ? "Normal mode uses a direct transformation of your field values." 
-                    : "Smart mode analyzes your inputs to create a more complex, structured password using segments of your words."}
-            </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <h3 className="text-lg font-semibold mb-2">Generation Mode</h3>
+              <RadioGroup
+                  value={generationMode}
+                  onValueChange={(value: 'normal' | 'smart') => setGenerationMode(value)}
+                  className="flex flex-col sm:flex-row gap-2 sm:gap-4"
+              >
+                  <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="normal" id="mode-normal" />
+                      <Label htmlFor="mode-normal" className="cursor-pointer">Normal Mode</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="smart" id="mode-smart" />
+                      <Label htmlFor="mode-smart" className="cursor-pointer">Smart Mode</Label>
+                  </div>
+              </RadioGroup>
+              <p className="text-xs text-muted-foreground mt-1">
+                  {generationMode === 'normal' 
+                      ? "Normal mode uses a direct transformation of your field values." 
+                      : "Smart mode creates a structured password using segments of your words, symbols, and numbers."}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold mb-2">Password Length</h3>
+               <RadioGroup
+                  value={selectedPasswordLength.toString()}
+                  onValueChange={(value: string) => setSelectedPasswordLength(parseInt(value, 10))}
+                  className="flex flex-col sm:flex-row gap-2 sm:gap-4"
+              >
+                  {AVAILABLE_PASSWORD_LENGTHS.map(len => (
+                    <div key={len} className="flex items-center space-x-2">
+                        <RadioGroupItem value={len.toString()} id={`len-${len}`} />
+                        <Label htmlFor={`len-${len}`} className="cursor-pointer">{len} Characters</Label>
+                    </div>
+                  ))}
+              </RadioGroup>
+            </div>
           </div>
+
 
           <div>
             <h3 className="text-xl font-semibold mb-2">Your Fields</h3>
@@ -611,6 +572,4 @@ export default function HomePage() {
     </div>
   );
 }
-    
-
     
