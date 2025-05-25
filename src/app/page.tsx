@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Separator } from '@/components/ui/separator';
 import { AlertCircle, Loader2, Save } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useRouter } from 'next/navigation';
+// import { useRouter } from 'next/navigation'; // No longer used here, but kept in case of future routing needs from this page
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,31 +42,30 @@ const simpleHash = (str: string): number => {
 
 const capitalize = (s: string | undefined): string => {
     if (!s) return '';
-    return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); // Ensures rest is lowercase
 }
 
 const applyLeetSpeak = (str: string | undefined, seedStr: string): string => {
   if (!str || str.length < 1) return str || '';
+  // Ensure input to leetspeak is lowercase for map consistency
+  const lcStr = str.toLowerCase();
   const leetMap: {[key: string]: string} = { 'a': '4', 'e': '3', 'o': '0', 'i': '1', 's': '5', 'l': '7', 't': '+' };
-  const chars = str.split('');
+  const chars = lcStr.split('');
   const seed = simpleHash(seedStr);
   
-  // Deterministically find a character to 'leet' if present
   const availableLeetChars = (Object.keys(leetMap) as (keyof typeof leetMap)[])
-    .filter(key => str.toLowerCase().includes(key));
+    .filter(key => lcStr.includes(key));
 
   if (availableLeetChars.length > 0) {
     const charToLeet = availableLeetChars[seed % availableLeetChars.length];
     let replaced = false;
-    // Try to replace a character at a deterministic index if possible
-    const potentialIdx = seed % str.length;
-    if (str[potentialIdx].toLowerCase() === charToLeet) {
+    const potentialIdx = seed % lcStr.length;
+    if (lcStr[potentialIdx] === charToLeet) {
         chars[potentialIdx] = leetMap[charToLeet];
         replaced = true;
     }
-    // Fallback to first occurrence if deterministic index didn't match
     if (!replaced) {
-        const firstOccurrenceIdx = str.toLowerCase().indexOf(charToLeet);
+        const firstOccurrenceIdx = lcStr.indexOf(charToLeet);
         if (firstOccurrenceIdx !== -1) {
             chars[firstOccurrenceIdx] = leetMap[charToLeet];
         }
@@ -81,51 +80,79 @@ function generateSmartPassword(fieldValues: string[]): string {
 
   const tokens: string[] = [];
   fieldValues.forEach(val => {
-    val.split(/[ ,\-_/.@]+/) // Split by common delimiters including . and @
+    val.split(/[ ,\-_/.@]+/) 
        .forEach(word => {
-         if (word && word.length > 1) tokens.push(word); // Filter empty and very short tokens
+         if (word && word.length > 1) tokens.push(word.toLowerCase()); // Convert to lowercase during tokenization
        });
   });
 
   if (tokens.length === 0) {
-    // Fallback if no usable tokens: Use a modified version of normal generation
-    return generateLocalPassword(fieldValues.map(fv => fv.substring(0,5))); // Use prefixes
+    return generateLocalPassword(fieldValues.map(fv => fv.substring(0,5))); 
   }
 
-  const baseSeed = fieldValues.join('|');
+  const baseSeed = fieldValues.join('|'); // Use original fieldValues for baseSeed
   const getDeterministicValue = <T>(arr: T[], seedPart: string): T | undefined => {
     if (arr.length === 0) return undefined;
     return arr[simpleHash(baseSeed + seedPart) % arr.length];
   };
 
-  let word1 = getDeterministicValue(tokens, "w1");
-  let word2 = getDeterministicValue(tokens.filter(t => t !== word1), "w2") || word1;
-  let word3 = getDeterministicValue(tokens.filter(t => t !== word1 && t !== word2), "w3") || word2;
-  
-  const numericTokens = tokens.filter(t => /^\d+$/.test(t));
-  let numPart = numericTokens.length > 0 ? getDeterministicValue(numericTokens, "n1") : (simpleHash(baseSeed + "n_fallback") % 90 + 10).toString();
-  if (numPart && numPart.length > 3) numPart = numPart.substring(0,3); // Cap numeric part length
+  const LONG_WORD_THRESHOLD = 6; 
+  const TARGET_SEGMENT_LENGTH = 4; 
 
-  const comp1 = capitalize(word1);
-  const comp2 = applyLeetSpeak(word2, baseSeed + "leet2");
-  const comp3 = word3 ? word3.split('').reverse().join('') : "";
+  const processToken = (token: string | undefined, seedSuffix: string): string => {
+    if (!token) return ''; // Token is already lowercase
+    if (token.length > LONG_WORD_THRESHOLD && token.length > TARGET_SEGMENT_LENGTH) {
+      const choice = simpleHash(baseSeed + token + seedSuffix + "segment_choice") % 3;
+      if (choice === 0) { // Prefix
+        return token.substring(0, TARGET_SEGMENT_LENGTH);
+      } else if (choice === 1) { // Suffix
+        return token.substring(token.length - TARGET_SEGMENT_LENGTH);
+      } else { // Middle
+        // Ensure start index allows for full TARGET_SEGMENT_LENGTH
+        const maxStart = token.length - TARGET_SEGMENT_LENGTH;
+        const start = simpleHash(baseSeed + token + seedSuffix + "mid_start") % (maxStart + 1);
+        return token.substring(start, start + TARGET_SEGMENT_LENGTH);
+      }
+    }
+    return token; 
+  };
+
+  let token1Raw = getDeterministicValue(tokens, "w1_seed");
+  let token2Raw = getDeterministicValue(tokens.filter(t => t !== token1Raw), "w2_seed") || token1Raw;
+  let token3Raw = getDeterministicValue(tokens.filter(t => t !== token1Raw && t !== token2Raw), "w3_seed") || token2Raw;
+
+  const segment1 = processToken(token1Raw, "seg1_proc");
+  const segment2 = processToken(token2Raw, "seg2_proc");
+  const segment3 = processToken(token3Raw, "seg3_proc");
+  
+  const comp1 = capitalize(segment1); // segment1 is lowercase
+  const comp2 = applyLeetSpeak(segment2, baseSeed + "leet_seg2"); // segment2 is lowercase
+
+  let comp3 = "";
+  if (segment3 && segment3.length > 0 && segment3 !== segment1 && segment3 !== segment2) {
+    comp3 = segment3.split('').reverse().join(''); // segment3 is lowercase
+  }
+
+  const numericTokens = tokens.filter(t => /^\d+$/.test(t)); // These tokens are already lowercase, but numbers are fine
+  let numPart = numericTokens.length > 0 ? getDeterministicValue(numericTokens, "n1_select") : (simpleHash(baseSeed + "n_fallback") % 90 + 10).toString();
+  if (numPart && numPart.length > 3) numPart = numPart.substring(0,3);
 
   const symbols = ['@', '#', '$', '&', '*', '-', '_', '+', '%', '^'];
-  const sym1 = getDeterministicValue(symbols, "s1") || '@';
-  const sym2 = getDeterministicValue(symbols.filter(s => s !== sym1), "s2") || '#';
-  const sym3 = getDeterministicValue(symbols.filter(s => s !== sym1 && s !== sym2), "s3") || '$';
+  const sym1 = getDeterministicValue(symbols, "sym1_select") || '@';
+  const sym2 = getDeterministicValue(symbols.filter(s => s !== sym1), "sym2_select") || '#';
+  const sym3 = getDeterministicValue(symbols.filter(s => s !== sym1 && s !== sym2), "sym3_select") || '$';
 
   const parts: (string | undefined)[] = [];
-  parts.push(comp1);
+  if (comp1 && comp1.length > 0) parts.push(comp1);
   parts.push(sym1);
-  parts.push(numPart);
+  if (numPart && numPart.length > 0) parts.push(numPart);
   
-  if (comp2 && comp2.length > 0) {
+  if (comp2 && comp2.length > 0 && (segment2 && segment1 && segment2 !== segment1)) { 
     parts.push(sym2);
     parts.push(comp2);
   }
   
-  if (comp3 && comp3.length > 0 && tokens.length > 2) {
+  if (comp3 && comp3.length > 0) { // comp3 is already guaranteed to be from a distinct segment if non-empty
     parts.push(sym3);
     parts.push(comp3);
   }
@@ -148,7 +175,6 @@ function generateSmartPassword(fieldValues: string[]): string {
   const fallbacks = DEFAULT_COMPLEXITY_FALLBACKS;
   let fallbackKeys = Object.keys(fallbacks) as (keyof typeof fallbacks)[];
   
-  // Deterministic order for applying fallbacks if multiple needed
   fallbackKeys.sort(); 
 
   for (const key of fallbackKeys) {
@@ -156,7 +182,6 @@ function generateSmartPassword(fieldValues: string[]): string {
       if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
         tempPasswordArray.push(fallbacks[key]);
       } else if (tempPasswordArray.length > 0) {
-        // Replace from end deterministically based on order of fallbackKeys
         const replaceIdx = tempPasswordArray.length - 1 - (fallbackKeys.indexOf(key) % tempPasswordArray.length);
         tempPasswordArray[Math.max(0, replaceIdx)] = fallbacks[key];
       }
@@ -165,7 +190,7 @@ function generateSmartPassword(fieldValues: string[]): string {
   generatedPassword = tempPasswordArray.join('');
 
   if (generatedPassword.length < PASSWORD_MIN_LENGTH) {
-    let paddingSource = baseSeed.replace(/[^a-zA-Z0-9!@#$%^&*()]/g, ''); // cleaner padding source
+    let paddingSource = baseSeed.replace(/[^a-zA-Z0-9!@#$%^&*()]/g, ''); 
     if (paddingSource.length === 0) paddingSource = "FieldKey01!";
     let currentPaddingIndex = 0;
     while (generatedPassword.length < PASSWORD_MIN_LENGTH) {
@@ -235,7 +260,7 @@ function generateLocalPassword(fieldValues: string[]): string {
   if (needsNumber) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.number, type: 'number' });
   if (needsSpecial) fallbacksToApply.push({ char: DEFAULT_COMPLEXITY_FALLBACKS.special, type: 'special' });
   
-  fallbacksToApply.sort((a,b) => a.type.localeCompare(b.type)); // Deterministic order of application
+  fallbacksToApply.sort((a,b) => a.type.localeCompare(b.type)); 
 
   for (let i = 0; i < fallbacksToApply.length; i++) {
     const fallback = fallbacksToApply[i];
@@ -282,7 +307,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [generationMode, setGenerationMode] = useState<'normal' | 'smart'>('normal');
   const { toast } = useToast();
-  const router = useRouter();
+  // const router = useRouter(); // No longer used
 
   const [isSavePresetModalOpen, setSavePresetModalOpen] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
@@ -418,7 +443,7 @@ export default function HomePage() {
       setGeneratedPassword(''); 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, generationMode]); // Added generationMode to dependencies
+  }, [fields, generationMode]); 
 
   const handleConfirmSavePreset = () => {
     if (!newPresetName.trim()) {
@@ -485,7 +510,7 @@ export default function HomePage() {
             <p className="text-xs text-muted-foreground mb-4">
                 {generationMode === 'normal' 
                     ? "Normal mode uses a direct transformation of your field values." 
-                    : "Smart mode analyzes your inputs to create a more complex, structured password."}
+                    : "Smart mode analyzes your inputs to create a more complex, structured password using segments of your words."}
             </p>
           </div>
 
@@ -586,4 +611,6 @@ export default function HomePage() {
     </div>
   );
 }
+    
+
     
