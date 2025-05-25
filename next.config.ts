@@ -1,7 +1,11 @@
-import type {NextConfig} from 'next';
+// next.config.ts
+import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "export", // Required for GitHub Pages (static export)
+  basePath: "/FieldKey", // Important: must match your repo name exactly
+  trailingSlash: true, // Helps GitHub Pages serve static routes correctly
+
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -11,13 +15,37 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'placehold.co',
-        port: '',
-        pathname: '/**',
+        protocol: "https",
+        hostname: "placehold.co",
+        port: "",
+        pathname: "/**",
       },
     ],
   },
 };
 
 export default nextConfig;
+
+// import type {NextConfig} from 'next';
+
+// const nextConfig: NextConfig = {
+//   /* config options here */
+//   typescript: {
+//     ignoreBuildErrors: true,
+//   },
+//   eslint: {
+//     ignoreDuringBuilds: true,
+//   },
+//   images: {
+//     remotePatterns: [
+//       {
+//         protocol: 'https',
+//         hostname: 'placehold.co',
+//         port: '',
+//         pathname: '/**',
+//       },
+//     ],
+//   },
+// };
+
+// export default nextConfig;
