@@ -27,18 +27,6 @@ const DEFAULT_COMPLEXITY_FALLBACKS = {
   number: '1',
   special: '!',
 };
-// Simple, deterministic leetspeak map
-const LEET_MAP: { [key: string]: string } = {
-  'o': '0', 'O': '0',
-  'l': '1', 'I': '1',
-  'e': '3', 'E': '3',
-  'a': '4', 'A': '4',
-  's': '5', 'S': '5',
-  't': '7', 'T': '7',
-  'b': '8', 'B': '8',
-  'g': '9', 'G': '9', // Can also be '6' for 'G'
-};
-
 
 function generateLocalPassword(fieldValues: string[]): string {
   if (fieldValues.length === 0) {
@@ -60,83 +48,31 @@ function generateLocalPassword(fieldValues: string[]): string {
         }
       }
     }
-    if (!charAddedInThisPass && interleavedChars.length > 0) break;
+    if (!charAddedInThisPass && interleavedChars.length > 0) break; // All fields exhausted for this charIndex
     if (interleavedChars.length >= PASSWORD_MAX_LENGTH) break;
     charIndex++;
   }
-  let tempPasswordArray = interleavedChars; // Work with this array
+  
+  let tempPasswordArray = [...interleavedChars]; // Work with this array
 
-  // Full character pool from user inputs for transformations/padding checks
-  const characterPool = fieldValues.join('');
-
-  // 2. Complexity Pass (Transform First, then Default Fallback)
+  // 2. Ensure Complexity by appending or replacing
   let needsUppercase = !tempPasswordArray.some(char => /[A-Z]/.test(char));
   let needsLowercase = !tempPasswordArray.some(char => /[a-z]/.test(char));
   let needsNumber = !tempPasswordArray.some(char => /\d/.test(char));
   let needsSpecial = !tempPasswordArray.some(char => /[^A-Za-z0-9]/.test(char));
 
-  // Attempt Transformations
-  if (needsUppercase) {
-    for (let i = 0; i < tempPasswordArray.length; i++) {
-      if (/[a-z]/.test(tempPasswordArray[i])) {
-        tempPasswordArray[i] = tempPasswordArray[i].toUpperCase();
-        needsUppercase = false;
-        break;
-      }
-    }
-  }
-  if (needsLowercase) {
-    for (let i = 0; i < tempPasswordArray.length; i++) {
-      if (/[A-Z]/.test(tempPasswordArray[i])) {
-        tempPasswordArray[i] = tempPasswordArray[i].toLowerCase();
-        needsLowercase = false;
-        break;
-      }
-    }
-  }
-  if (needsNumber) {
-    for (let i = 0; i < tempPasswordArray.length; i++) {
-      if (LEET_MAP[tempPasswordArray[i].toLowerCase()]) { // Check lowercase for broader match
-        tempPasswordArray[i] = LEET_MAP[tempPasswordArray[i].toLowerCase()];
-        needsNumber = false;
-        break;
-      }
-    }
-  }
-  if (needsSpecial) {
-    let specialCharFromPool = '';
-    for (const char of characterPool) {
-      if (/[^A-Za-z0-9]/.test(char)) {
-        specialCharFromPool = char;
-        break;
-      }
-    }
-    if (specialCharFromPool) {
-      if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
-        tempPasswordArray.push(specialCharFromPool);
-      } else if (tempPasswordArray.length > 0) { // Replace last if at max length
-        tempPasswordArray[tempPasswordArray.length - 1] = specialCharFromPool;
-      }
-      needsSpecial = false;
-    }
-  }
-
-  // Fallback to Default Complexity Characters if still needed
   const fallbacksToAdd: string[] = [];
   if (needsUppercase) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.uppercase);
   if (needsLowercase) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.lowercase);
   if (needsNumber) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.number);
   if (needsSpecial) fallbacksToAdd.push(DEFAULT_COMPLEXITY_FALLBACKS.special);
   
+  // Add fallbacks, replacing from the end if at max length
   for (let i = 0; i < fallbacksToAdd.length; i++) {
     const charToAdd = fallbacksToAdd[i];
     if (tempPasswordArray.length < PASSWORD_MAX_LENGTH) {
       tempPasswordArray.push(charToAdd);
     } else if (tempPasswordArray.length > 0) {
-      // Replace from the end, ensuring not to replace what we just added/transformed if possible
-      // A simple strategy: replace characters starting from (length - fallbacks.length + current_fallback_idx)
-      // More robust: replace characters that are not part of an already met complexity type.
-      // For now, simple replacement from end for remaining defaults.
       const replacementIndex = Math.max(0, tempPasswordArray.length - fallbacksToAdd.length + i);
       tempPasswordArray[replacementIndex] = charToAdd;
     }
@@ -144,20 +80,25 @@ function generateLocalPassword(fieldValues: string[]): string {
   
   let currentPassword = tempPasswordArray.join('');
 
-  // 3. Length Management (Padding)
+  // 3. Length Management (Padding with user's interleaved data)
   if (currentPassword.length < PASSWORD_MIN_LENGTH) {
-    let paddingSource = interleavedChars.join(''); // Use the user's interleaved data for padding
+    let paddingSource = interleavedChars.join(''); 
     if (paddingSource.length === 0) { 
-      paddingSource = "FkSec#01"; // Fallback if user inputs were all empty
+      paddingSource = "FkSec#01"; 
     }
+    
     let currentPaddingIndex = 0;
     while (currentPassword.length < PASSWORD_MIN_LENGTH) {
-      currentPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
-      currentPaddingIndex++;
+      if (paddingSource.length > 0) { 
+        currentPassword += paddingSource.charAt(currentPaddingIndex % paddingSource.length);
+        currentPaddingIndex++;
+      } else { 
+        break; 
+      }
     }
   }
 
-  // 4. Final Truncation (should be rare if logic is tight)
+  // 4. Final Truncation
   if (currentPassword.length > PASSWORD_MAX_LENGTH) {
     currentPassword = currentPassword.substring(0, PASSWORD_MAX_LENGTH);
   }
@@ -449,3 +390,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+    
