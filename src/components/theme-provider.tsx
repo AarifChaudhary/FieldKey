@@ -12,15 +12,10 @@ const parseHslString = (hslString: string): { h: number; s: number; l: number } 
   if (!hslString) return null;
   const match = hslString.match(/^(\d{1,3})\s+(\d{1,3})%\s+(\d{1,3})%$/);
   if (!match) {
-    console.warn("Invalid HSL string format:", hslString);
+    console.warn("Invalid HSL string format for parsing:", hslString);
     return null;
   }
   return { h: parseFloat(match[1]), s: parseFloat(match[2]), l: parseFloat(match[3]) };
-};
-
-// Helper to format HSL object back to "H S% L%" string
-const formatHslString = (hsl: { h: number; s: number; l: number }): string => {
-  return `${Math.round(hsl.h)} ${Math.round(hsl.s)}% ${Math.round(hsl.l)}%`;
 };
 
 interface ThemeProviderState {
@@ -83,34 +78,21 @@ export const ThemeProvider: FC<ThemeProviderProps> = ({
     
     root.style.setProperty('--primary', currentPrimaryColor);
     root.style.setProperty('--ring', currentPrimaryColor);
-    root.style.setProperty('--primary-raw', currentPrimaryColor);
+    root.style.setProperty('--primary-raw', currentPrimaryColor); // Used by some components if they need raw values
 
     // Dynamically calculate and set --accent and --accent-foreground
+    // --accent will be primaryColor with 20% alpha
+    // --accent-foreground will be the full primaryColor
     const primaryHsl = parseHslString(currentPrimaryColor);
     if (primaryHsl) {
       const { h, s, l } = primaryHsl;
-
-      const accentH = h;
-      const accentS = Math.max(0, Math.min(100, s * 0.9)); // Slightly desaturate
-
-      let accentL: number;
-      let accentFgColorString: string;
-
-      if (effectiveTheme === 'light') {
-        accentL = Math.min(90, l + 20); // Make accent lighter
-        // Use dark text if accent is light, otherwise white
-        accentFgColorString = accentL > 60 ? "240 10% 3.9%" : "0 0% 100%"; 
-      } else { // dark theme
-        accentL = Math.min(85, l + 15); // Make accent slightly lighter than primary
-         // Use white text if accent is not too light, otherwise dark
-        accentFgColorString = accentL > 55 ? "240 10% 3.9%" : "0 0% 100%";
-      }
       
-      accentL = Math.max(5, Math.min(95, accentL)); // Clamp L to avoid pure black/white
-
-      const accentColorString = formatHslString({ h: accentH, s: accentS, l: accentL });
-      root.style.setProperty('--accent', accentColorString);
-      root.style.setProperty('--accent-foreground', accentFgColorString);
+      const accentValueWithAlpha = `${h.toFixed(0)} ${s.toFixed(0)}% ${l.toFixed(0)}% / 0.2`;
+      root.style.setProperty('--accent', accentValueWithAlpha);
+      
+      // Set --accent-foreground to be the full primary color string (e.g., "162 72% 48%")
+      // Tailwind's hsl(var(--accent-foreground)) will then correctly apply it.
+      root.style.setProperty('--accent-foreground', currentPrimaryColor);
     }
 
   }, []);
@@ -124,7 +106,7 @@ export const ThemeProvider: FC<ThemeProviderProps> = ({
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = () => {
-      applyTheme("system", primaryColor); // Re-apply to recalculate accent too
+      applyTheme("system", primaryColor); 
     };
 
     mediaQuery.addEventListener("change", handleChange);
